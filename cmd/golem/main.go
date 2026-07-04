@@ -103,7 +103,16 @@ func main() {
 	ag, err := agent.New(projectRoot, llmClient, agent.Options{
 		SessionID:    sessionID,
 		Policy:       policy,
-		OnSession:    session.PersistOnEnd{Store: store, Source: ref},
+		OnSession: agent.ChainEndHandler{
+			session.PersistOnEnd{Store: store, Source: ref},
+			agent.MemoryOnEnd{
+				Store:       store,
+				Source:      ref,
+				ProjectRoot: projectRoot,
+				MemoryCfg:   cfg.Memory,
+				LLM:         llmClient,
+			},
+		},
 		InitialMsgs:  resumeMsgs,
 		MemoryCfg:    cfg.Memory,
 		ContextLimit: cfg.Provider.ContextLimit,

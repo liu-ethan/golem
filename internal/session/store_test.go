@@ -10,6 +10,7 @@ import (
 	"github.com/tencent-docs/golem/internal/agent"
 	"github.com/tencent-docs/golem/internal/approval"
 	"github.com/tencent-docs/golem/internal/llm"
+	"github.com/tencent-docs/golem/internal/memory"
 	"github.com/tencent-docs/golem/internal/testutil"
 )
 
@@ -363,5 +364,99 @@ func TestTruncatePreview(t *testing.T) {
 	}
 	if len([]rune(got)) > 80 {
 		t.Errorf("preview rune length = %d", len([]rune(got)))
+	}
+}
+
+func TestInsertAndListMemoryFacts(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	st, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	sessionID := uuid.NewString()
+	facts := []memory.MemoryFact{
+		{Content: "用户偏好 tabs", Category: "preference"},
+		{Content: "项目用 Go", Category: "project_fact"},
+	}
+	if err := st.InsertMemoryFacts(sessionID, facts); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := st.ListMemoryFacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded) != 2 {
+		t.Fatalf("facts = %d, want 2", len(loaded))
+	}
+	if loaded[0].ProjectID != st.ProjectIDValue() {
+		t.Errorf("project_id = %q", loaded[0].ProjectID)
+	}
+	if loaded[0].SessionID != sessionID {
+		t.Errorf("session_id = %q", loaded[0].SessionID)
+	}
+}
+
+func TestIncrementSessionCount(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	st, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	c1, err := st.IncrementSessionCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2, err := st.IncrementSessionCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c1 != 1 || c2 != 2 {
+		t.Fatalf("counts = %d, %d, want 1, 2", c1, c2)
+	}
+}
+
+func TestDeleteAllFactsAndResetSessionCount(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	st, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	sessionID := uuid.NewString()
+	if err := st.InsertMemoryFacts(sessionID, []memory.MemoryFact{
+		{Content: "fact", Category: "preference"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.IncrementSessionCount(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := st.DeleteAllFacts(); err != nil {
+		t.Fatal(err)
+	}
+	facts, err := st.ListMemoryFacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts) != 0 {
+		t.Fatalf("facts after delete = %d", len(facts))
+	}
+
+	if err := st.ResetSessionCount(); err != nil {
+		t.Fatal(err)
+	}
+	count, err := st.IncrementSessionCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Errorf("count after reset = %d, want 1", count)
 	}
 }

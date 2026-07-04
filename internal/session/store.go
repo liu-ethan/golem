@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tencent-docs/golem/internal/llm"
+	"github.com/tencent-docs/golem/internal/memory"
 	_ "modernc.org/sqlite"
 )
 
@@ -98,6 +99,21 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id);
+CREATE TABLE IF NOT EXISTS memory_facts (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    project_id  TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    category    TEXT NOT NULL,
+    created_at  DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memory_facts_project_id ON memory_facts(project_id);
+CREATE TABLE IF NOT EXISTS profile_jobs (
+    project_id       TEXT PRIMARY KEY,
+    last_run_at      DATETIME,
+    session_count    INTEGER DEFAULT 0,
+    status           TEXT DEFAULT 'idle'
+);
 `
 
 // migrate 执行建表 DDL；幂等，可重复调用。
@@ -345,4 +361,123 @@ func parseSQLiteTime(raw string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("parse time %q", raw)
+}
+
+// InsertMemoryFacts 将 Layer 1 提取的情节记忆写入 memory_facts 表。
+func (s *Store) InsertMemoryFacts(sessionID string, facts []memory.MemoryFact) error {
+	if sessionID == "" {
+		return fmt.Errorf("session id is required")
+	}
+	if len(facts) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := time.Now().UTC()
+	for i, fact := range facts {
+		id := fact.ID
+		if id == "" {
+			id = uuid.NewString()
+		}
+		projectID := fact.ProjectID
+		if projectID == "" {
+			projectID = s.projectID
+		}
+		createdAt := fact.CreatedAt
+		if createdAt.IsZero() {
+			createdAt = now.Add(time.Duration(i) * time.Microsecond)
+		}
+		_, err := tx.Exec(
+			`INSERT INTO memory_facts (id, session_id, project_id, content, category, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			id, sessionID, projectID, fact.Content, fact.Category, createdAt.UTC().Format(time.RFC3339Nano),
+		)
+		if err != nil {
+			return fmt.Errorf("insert memory fact: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit memory facts: %w", err)
+	}
+	return nil
+}
+
+// ListMemoryFacts 返回当前项目的全部情节记忆，供 BM25 检索使用。
+func (s *Store) ListMemoryFacts() ([]memory.MemoryFact, error) {
+	rows, err := s.db.Query(
+		`SELECT id, session_id, project_id, content, category, created_at FROM memory_facts
+		 WHERE project_id = ?
+		 ORDER BY created_at ASC`,
+		s.projectID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list memory facts: %w", err)
+	}
+	defer rows.Close()
+
+	var facts []memory.MemoryFact
+	for rows.Next() {
+		var f memory.MemoryFact
+		var createdRaw string
+		if err := rows.Scan(&f.ID, &f.SessionID, &f.ProjectID, &f.Content, &f.Category, &createdRaw); err != nil {
+			return nil, fmt.Errorf("scan memory fact: %w", err)
+		}
+		f.CreatedAt, err = parseSQLiteTime(createdRaw)
+		if err != nil {
+			return nil, err
+		}
+		facts = append(facts, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate memory facts: %w", err)
+	}
+	return facts, nil
+}
+
+// IncrementSessionCount 将会话结束计数加一并返回新值，用于 Layer 2 触发判断。
+func (s *Store) IncrementSessionCount() (int, error) {
+	_, err := s.db.Exec(
+		`INSERT INTO profile_jobs (project_id, session_count, status) VALUES (?, 1, 'idle')
+		 ON CONFLICT(project_id) DO UPDATE SET session_count = session_count + 1`,
+		s.projectID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("increment session count: %w", err)
+	}
+
+	var count int
+	err = s.db.QueryRow(
+		`SELECT session_count FROM profile_jobs WHERE project_id = ?`,
+		s.projectID,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("read session count: %w", err)
+	}
+	return count, nil
+}
+
+// ResetSessionCount 将 profile_jobs.session_count 归零，Layer 2 合并完成后调用。
+func (s *Store) ResetSessionCount() error {
+	_, err := s.db.Exec(
+		`INSERT INTO profile_jobs (project_id, session_count, status) VALUES (?, 0, 'idle')
+		 ON CONFLICT(project_id) DO UPDATE SET session_count = 0`,
+		s.projectID,
+	)
+	if err != nil {
+		return fmt.Errorf("reset session count: %w", err)
+	}
+	return nil
+}
+
+// DeleteAllFacts 删除当前项目的全部 memory_facts，Layer 2 合并完成后调用。
+func (s *Store) DeleteAllFacts() error {
+	_, err := s.db.Exec(`DELETE FROM memory_facts WHERE project_id = ?`, s.projectID)
+	if err != nil {
+		return fmt.Errorf("delete memory facts: %w", err)
+	}
+	return nil
 }
