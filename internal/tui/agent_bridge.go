@@ -9,6 +9,7 @@ import (
 	"github.com/tencent-docs/golem/internal/llm"
 	"github.com/tencent-docs/golem/internal/memory"
 	"github.com/tencent-docs/golem/internal/session"
+	"github.com/tencent-docs/golem/internal/tui/style"
 )
 
 // agentEventMsg 将 Agent 事件从 goroutine 投递到 Bubble Tea Update。
@@ -52,6 +53,7 @@ func (m *Model) startAgentRun(input string) {
 	m.runCancel = cancel
 	m.running = true
 	m.streaming = ""
+	m.thinkingStreaming = ""
 	m.streamStarted = false
 
 	go func() {
@@ -94,6 +96,7 @@ func (m *Model) startAgentPlan(input string) {
 	m.runCancel = cancel
 	m.running = true
 	m.streaming = ""
+	m.thinkingStreaming = ""
 	m.streamStarted = false
 
 	go func() {
@@ -129,6 +132,62 @@ func (m *Model) startAgentPlan(input string) {
 	}()
 }
 
+// startAgentSkill 以指定 Skill 执行单条 query，仅本轮生效。
+func (m *Model) startAgentSkill(skillName, query string) {
+	if m.skillLoader == nil {
+		if m.program != nil {
+			m.program.Send(agentDoneMsg{err: fmt.Errorf("skill loader unavailable")})
+		}
+		return
+	}
+	skill, err := m.skillLoader.LoadByName(skillName)
+	if err != nil {
+		if m.program != nil {
+			m.program.Send(agentDoneMsg{err: err})
+		}
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.runCancel = cancel
+	m.running = true
+	m.streaming = ""
+	m.thinkingStreaming = ""
+	m.streamStarted = false
+
+	go func() {
+		handler := func(evt agent.Event) {
+			if m.program != nil {
+				m.program.Send(agentEventMsg(evt))
+			}
+		}
+		confirm := func(toolName string, input map[string]any) (bool, error) {
+			resp := make(chan bool, 1)
+			if m.program != nil {
+				m.program.Send(confirmRequestMsg{
+					toolName: toolName,
+					input:    input,
+					resp:     resp,
+				})
+			}
+			select {
+			case ok := <-resp:
+				return ok, nil
+			case <-ctx.Done():
+				return false, ctx.Err()
+			}
+		}
+		m.agent.SetConfirm(confirm)
+		err := m.agent.RunSkillOnce(ctx, skill, query, handler)
+		if err != nil && ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		if m.program != nil {
+			m.program.Send(agentDoneMsg{err: err})
+		}
+	}()
+}
+
 // cancelAgentRun 取消当前 Agent 流式轮次。
 func (m *Model) cancelAgentRun() {
 	if m.runCancel != nil {
@@ -139,12 +198,16 @@ func (m *Model) cancelAgentRun() {
 // handleAgentEvent 将 Agent 事件映射到聊天区 UI 状态。
 func (m *Model) handleAgentEvent(evt agent.Event) {
 	switch evt.Type {
+	case agent.EventThinkingDelta:
+		m.thinkingStreaming += evt.Text
 	case agent.EventTextDelta:
+		m.flushThinking()
 		if !m.streamStarted {
 			m.streamStarted = true
 		}
 		m.streaming += evt.Text
 	case agent.EventToolStart:
+		m.flushThinking()
 		m.flushStreaming()
 		m.lines = append(m.lines, ChatLine{
 			Kind:      LineTool,
@@ -155,6 +218,7 @@ func (m *Model) handleAgentEvent(evt agent.Event) {
 	case agent.EventToolComplete:
 		m.updateLastTool(evt.ToolName, evt.ToolInput, evt.ToolOutput, evt.ToolError)
 	case agent.EventTurnComplete:
+		m.flushThinking()
 		m.flushStreaming()
 	case agent.EventError:
 		if evt.Err != nil {
@@ -168,6 +232,7 @@ func (m *Model) handleAgentDone(msg agentDoneMsg) {
 	m.running = false
 	m.runCancel = nil
 	m.agent.SetConfirm(nil)
+	m.flushThinking()
 	m.flushStreaming()
 	m.syncStatus()
 
@@ -182,6 +247,19 @@ func (m *Model) handleAgentDone(msg agentDoneMsg) {
 		_ = syncMessages(m.store, m.agent)
 	}
 	m.drainInputQueue()
+}
+
+func (m *Model) flushThinking() {
+	text := strings.TrimSpace(m.thinkingStreaming)
+	if text == "" {
+		m.thinkingStreaming = ""
+		return
+	}
+	m.lines = append(m.lines, ChatLine{
+		Kind: LineThinking,
+		Text: text,
+	})
+	m.thinkingStreaming = ""
 }
 
 func (m *Model) flushStreaming() {
@@ -305,34 +383,34 @@ func formatToolCard(line ChatLine, width int) string {
 	if width < 20 {
 		width = 20
 	}
-	border := strings.Repeat("─", width-2)
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("┌─ Tool: %s ", line.ToolName))
-	b.WriteString(strings.Repeat("─", max(0, width-len(line.ToolName)-10)))
+	b.WriteString(style.Border.Render("┌─ Tool: "))
+	b.WriteString(style.Accent.Render(line.ToolName))
+	b.WriteString(" ")
+	b.WriteString(style.Border.Render(strings.Repeat("─", max(0, width-len(line.ToolName)-10))))
 	b.WriteString("\n")
 	if detail := formatToolInput(line.ToolInput); detail != "" {
-		b.WriteString(fmt.Sprintf("│ %s\n", truncateRunes(detail, width-4)))
+		b.WriteString("│ ")
+		b.WriteString(renderRichText(truncateRunes(detail, width-4), style.Muted))
+		b.WriteString("\n")
 	}
 	switch line.ToolState {
 	case ToolRunning:
-		b.WriteString("│ [执行中…]\n")
+		b.WriteString("│ " + style.AccentAlt.Render("[执行中…]") + "\n")
 	case ToolConfirm:
-		b.WriteString("│ 是否允许？ [Y/n]\n")
+		b.WriteString("│ " + style.Warning.Render("是否允许？ [Y/n]") + "\n")
 	case ToolDenied:
-		b.WriteString(fmt.Sprintf("│ [已拒绝] %s\n", truncateRunes(line.ToolOutput, width-12)))
+		b.WriteString("│ " + style.ErrText.Render("[已拒绝] "+truncateRunes(line.ToolOutput, width-12)) + "\n")
 	case ToolDone:
 		if line.ToolError {
-			b.WriteString(fmt.Sprintf("│ [错误] %s\n", truncateRunes(line.ToolOutput, width-10)))
+			b.WriteString("│ " + style.ErrText.Render("[错误] "+truncateRunes(line.ToolOutput, width-10)) + "\n")
 		} else {
-			b.WriteString("│ [✓ 已执行]\n")
+			b.WriteString("│ " + style.Success.Render("[✓ 已执行]") + "\n")
 		}
 	default:
-		b.WriteString("│ [等待…]\n")
+		b.WriteString("│ " + style.Muted.Render("[等待…]") + "\n")
 	}
-	_ = border
-	b.WriteString("└")
-	b.WriteString(strings.Repeat("─", width-2))
-	b.WriteString("┘")
+	b.WriteString(style.Border.Render("└" + strings.Repeat("─", width-2) + "┘"))
 	return b.String()
 }
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/tencent-docs/golem/internal/approval"
 	"github.com/tencent-docs/golem/internal/sandbox"
+	"github.com/tencent-docs/golem/internal/skills"
 )
 
 const helpText = `斜杠命令：
@@ -28,14 +29,23 @@ const helpText = `斜杠命令：
   /rename [name]            重命名当前 session
   /plan <query>             单条 plan 模式 query
   /skills                   Skill 列表页
+  /<skill-name> <提问>       选中 Skill 并提问（单次，/ 补全）
   /init                     生成 AGENTS.md 模板
   /exit                     结束会话并退出
 
+Skill 扫描路径（优先级：项目 > 全局 > builtin）：
+  · builtin（编译进 golem）
+  · ~/.golem/skills/（golem skill install 安装目录）
+  · <project>/.golem/skills/（项目级 Skill）
+
+未显式选用 Skill 时，首条消息会按语义 BM25 匹配并将相关 Skill 渐进式写入 system prompt。
+
 快捷键：
+  Tab（/ 命令前缀）         补全斜杠命令与 Skill
   Shift+Tab                 循环 approval 模式
   Ctrl+L                    清屏（保留对话）
   Esc×2（空输入）           编辑上一条 user 消息
-  Tab（流式中）             排队下一条输入
+  Tab（流式中，非 / 前缀）   排队下一条输入
   Ctrl+G                    外部编辑器撰写输入
   Ctrl+C（流式中）          取消当前 LLM 轮次
   Ctrl+C（空闲）            等同 /exit
@@ -60,8 +70,8 @@ func parseSlashCommand(raw string) (cmd string, args []string) {
 	return cmd, args
 }
 
-// dispatchSlash 处理斜杠命令，不送 LLM。
-func dispatchSlash(input string) slashResult {
+// dispatchSlash 处理斜杠命令，不送 LLM；loader 用于解析 /<skill-name> <提问>。
+func dispatchSlash(input string, loader *skills.Loader) slashResult {
 	raw := strings.TrimSpace(input)
 	if !strings.HasPrefix(raw, "/") {
 		return slashResult{handled: false}
@@ -137,6 +147,18 @@ func dispatchSlash(input string) slashResult {
 	case "exit", "quit":
 		return slashResult{handled: true, quit: true}
 	default:
+		if loader != nil && !isSlashCommandName(cmd) {
+			if skill, err := loader.LoadByName(cmd); err == nil {
+				query := strings.TrimSpace(strings.Join(args, " "))
+				if query == "" {
+					return slashResult{
+						handled: true,
+						message: fmt.Sprintf("用法: /%s <提问>", skill.Name),
+					}
+				}
+				return slashResult{handled: true, runSkill: skill.Name, skillQuery: query}
+			}
+		}
 		return slashResult{handled: true, message: fmt.Sprintf("未知命令: /%s（输入 /help 查看）", cmd)}
 	}
 }

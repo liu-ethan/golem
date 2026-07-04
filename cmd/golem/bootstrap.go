@@ -42,7 +42,6 @@ type bootstrapResult struct {
 	ag          *agent.Agent
 	llmClient   llm.LLMClient
 	rulesLines  []string
-	skillName   string
 }
 
 func (b *bootstrapResult) agLLM() llm.LLMClient {
@@ -50,7 +49,7 @@ func (b *bootstrapResult) agLLM() llm.LLMClient {
 }
 
 // bootstrapAgent 加载配置并创建 Agent，供 TUI 与 headless 共用。
-func bootstrapAgent(projectRoot string, overrides config.Overrides, resumeID, skillName string) (*bootstrapResult, error) {
+func bootstrapAgent(projectRoot string, overrides config.Overrides, resumeID string) (*bootstrapResult, error) {
 	cfg, err := config.LoadConfig(projectRoot, overrides)
 	if err != nil {
 		return nil, err
@@ -108,6 +107,11 @@ func bootstrapAgent(projectRoot string, overrides config.Overrides, resumeID, sk
 			Retriever: memory.NewBM25Retriever(),
 			TopK:      cfg.Memory.BM25TopK,
 		},
+		Skills: agent.BM25SkillProvider{
+			Loader:    skills.NewLoader(projectRoot),
+			Retriever: memory.NewBM25Retriever(),
+			TopK:      2,
+		},
 		OnSession: agent.ChainEndHandler{
 			session.PersistOnEnd{Store: store, Source: ref},
 			agent.MemoryOnEnd{
@@ -139,16 +143,6 @@ func bootstrapAgent(projectRoot string, overrides config.Overrides, resumeID, sk
 		_ = store.InsertDenial(tool, string(raw), reason)
 	})
 
-	if skillName != "" {
-		loader := skills.NewLoader(projectRoot)
-		skill, err := loader.Load(skillName)
-		if err != nil {
-			store.Close()
-			return nil, err
-		}
-		ag.SetSkill(skill)
-	}
-
 	return &bootstrapResult{
 		projectRoot: projectRoot,
 		cfg:         cfg,
@@ -156,6 +150,5 @@ func bootstrapAgent(projectRoot string, overrides config.Overrides, resumeID, sk
 		store:       store,
 		ag:          ag,
 		llmClient:   llmClient,
-		skillName:   skillName,
 	}, nil
 }

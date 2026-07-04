@@ -80,6 +80,7 @@ type Usage struct {
 type StreamEventType string
 
 const (
+	StreamEventThinkingDelta      StreamEventType = "thinking_delta"
 	StreamEventTextDelta          StreamEventType = "text_delta"
 	StreamEventToolUseStart       StreamEventType = "tool_use_start"
 	StreamEventToolUseInputDelta  StreamEventType = "tool_use_input_delta"
@@ -313,6 +314,7 @@ func (c *AnthropicClient) streamSSE(ctx context.Context, r io.Reader, events cha
 
 	var usage Usage
 	toolInputs := map[int]string{}
+	blockTypes := map[int]string{}
 
 	for scanner.Scan() {
 		if ctx.Err() != nil {
@@ -341,19 +343,24 @@ func (c *AnthropicClient) streamSSE(ctx context.Context, r io.Reader, events cha
 				usage.OutputTokens = evt.Message.Usage.OutputTokens
 			}
 		case "content_block_start":
-			if evt.ContentBlock != nil && evt.ContentBlock.Type == "tool_use" {
-				events <- StreamEvent{
-					Type:      StreamEventToolUseStart,
-					ToolUseID: evt.ContentBlock.ID,
-					ToolName:  evt.ContentBlock.Name,
+			if evt.ContentBlock != nil {
+				blockTypes[evt.Index] = evt.ContentBlock.Type
+				if evt.ContentBlock.Type == "tool_use" {
+					events <- StreamEvent{
+						Type:      StreamEventToolUseStart,
+						ToolUseID: evt.ContentBlock.ID,
+						ToolName:  evt.ContentBlock.Name,
+					}
+					toolInputs[evt.Index] = ""
 				}
-				toolInputs[evt.Index] = ""
 			}
 		case "content_block_delta":
 			if evt.Delta == nil {
 				continue
 			}
 			switch evt.Delta.Type {
+			case "thinking_delta":
+				events <- StreamEvent{Type: StreamEventThinkingDelta, Text: evt.Delta.Thinking}
 			case "text_delta":
 				events <- StreamEvent{Type: StreamEventTextDelta, Text: evt.Delta.Text}
 			case "input_json_delta":
@@ -361,6 +368,7 @@ func (c *AnthropicClient) streamSSE(ctx context.Context, r io.Reader, events cha
 				events <- StreamEvent{Type: StreamEventToolUseInputDelta, InputDelta: evt.Delta.PartialJSON}
 			}
 		case "content_block_stop":
+			delete(blockTypes, evt.Index)
 			if partial, ok := toolInputs[evt.Index]; ok && partial != "" {
 				var input map[string]any
 				if err := json.Unmarshal([]byte(partial), &input); err == nil {
@@ -416,6 +424,7 @@ type sseEvent struct {
 	Delta *struct {
 		Type         string `json:"type"`
 		Text         string `json:"text"`
+		Thinking     string `json:"thinking"`
 		PartialJSON  string `json:"partial_json"`
 	} `json:"delta"`
 

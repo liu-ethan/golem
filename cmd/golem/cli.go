@@ -81,7 +81,7 @@ func runHeadless(query string) int {
 		fmt.Fprintf(os.Stderr, "golem: resolve working directory: %v\n", err)
 		return 1
 	}
-	boot, err := bootstrapAgent(projectRoot, config.Overrides{}, "", "")
+	boot, err := bootstrapAgent(projectRoot, config.Overrides{}, "")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "golem: %v\n", err)
 		return 1
@@ -94,7 +94,7 @@ func runHeadless(query string) int {
 	return 0
 }
 
-func runTUI(showVersion bool, approvalFlag, sandboxFlag, resumeFlag, skillFlag string) int {
+func runTUI(showVersion bool, approvalFlag, sandboxFlag, resumeFlag string) int {
 	if showVersion {
 		fmt.Println(version)
 		return 0
@@ -109,7 +109,7 @@ func runTUI(showVersion bool, approvalFlag, sandboxFlag, resumeFlag, skillFlag s
 	boot, err := bootstrapAgent(projectRoot, config.Overrides{
 		Approval: approvalFlag,
 		Sandbox:  sandboxFlag,
-	}, resumeFlag, skillFlag)
+	}, resumeFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "golem: %v\n", err)
 		return 1
@@ -124,6 +124,7 @@ func runTUI(showVersion bool, approvalFlag, sandboxFlag, resumeFlag, skillFlag s
 
 	if err := tui.Run(tui.Config{
 		ProjectRoot:  projectRoot,
+		Version:      version,
 		Agent:        boot.ag,
 		Store:        boot.store,
 		Policy:       boot.policy,
@@ -145,12 +146,11 @@ func mainEntry() int {
 	approvalFlag := flag.String("approval", "", "审批模式：plan | ask-before-edit | ask | edit-automatically")
 	sandboxFlag := flag.String("sandbox", "", "沙箱模式：workspace-write | danger-full-access")
 	resumeFlag := flag.String("resume", "", "恢复指定 session id 的历史会话")
-	skillFlag := flag.String("skill", "", "启动时指定 Skill 名称")
 	flag.Parse()
 
 	args := flag.Args()
 	if len(args) > 0 && !*showVersion {
 		return runCLI(args)
 	}
-	return runTUI(*showVersion, *approvalFlag, *sandboxFlag, *resumeFlag, *skillFlag)
+	return runTUI(*showVersion, *approvalFlag, *sandboxFlag, *resumeFlag)
 }

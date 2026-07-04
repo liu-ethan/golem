@@ -24,36 +24,33 @@ func (a *Agent) SetDenialRecorder(fn DenialRecorder) {
 	a.onDenial = fn
 }
 
-// SetSkill 应用 Skill：追加 system prompt 并过滤可用工具。
-func (a *Agent) SetSkill(skill skills.Skill) {
-	a.activeSkill = skill
-	base, err := prompts.BuildBaseSystemPrompt(a.projectRoot)
+// RunPlanOnce 临时切换为 plan 模式执行单条 query，完成后恢复原 approval 模式。
+func (a *Agent) RunPlanOnce(ctx context.Context, query string, handler EventHandler) error {
+	prevPolicy := a.policy
+	planPolicy, err := approval.New(approval.ModePlan)
 	if err != nil {
-		base = prompts.BaseSystemPrompt()
+		return err
 	}
-	a.systemPrompt = base + skill.PromptOverlay()
+	a.SetApprovalPolicy(planPolicy)
+	defer a.SetApprovalPolicy(prevPolicy)
+	return a.handleUserMessage(ctx, query, handler)
+}
+
+// RunSkillOnce 以指定 Skill 执行单条 query，仅本轮生效，不持久切换 Skill。
+func (a *Agent) RunSkillOnce(ctx context.Context, skill skills.Skill, query string, handler EventHandler) error {
+	overlay := skill.PromptOverlay()
+	overlayStart := len(a.systemPrompt)
+	if overlay != "" {
+		a.systemPrompt += overlay
+	}
 	a.tools.SetToolFilter(skill.ToolAllowed)
-}
-
-// ClearSkill 清除当前 Skill，恢复默认 system prompt 与工具集。
-func (a *Agent) ClearSkill() {
-	a.activeSkill = skills.Skill{}
-	base, err := prompts.BuildBaseSystemPrompt(a.projectRoot)
-	if err != nil {
-		base = prompts.BaseSystemPrompt()
-	}
-	a.systemPrompt = base
-	a.tools.ClearToolFilter()
-}
-
-// ActiveSkillName 返回当前 Skill 名称；未激活时返回空字符串。
-func (a *Agent) ActiveSkillName() string {
-	return a.activeSkill.Name
-}
-
-// SessionOutputTokens 返回本会话累计 output token。
-func (a *Agent) SessionOutputTokens() int {
-	return a.sessionOutputTokens
+	defer func() {
+		if overlay != "" && len(a.systemPrompt) >= overlayStart+len(overlay) {
+			a.systemPrompt = a.systemPrompt[:overlayStart] + a.systemPrompt[overlayStart+len(overlay):]
+		}
+		a.tools.ClearToolFilter()
+	}()
+	return a.handleUserMessage(ctx, query, handler)
 }
 
 // SetModel 切换 LLM 模型名（AnthropicClient 实现）。
@@ -82,6 +79,7 @@ func (a *Agent) ClearContext() string {
 	a.sessionID = uuid.NewString()
 	a.messages = nil
 	a.memoryInjected = false
+	a.skillsInjected = false
 	a.sessionInputTokens = 0
 	a.sessionOutputTokens = 0
 	a.hadUserMessages = false
@@ -89,23 +87,8 @@ func (a *Agent) ClearContext() string {
 	if err != nil {
 		base = prompts.BaseSystemPrompt()
 	}
-	if a.activeSkill.Name != "" {
-		base += a.activeSkill.PromptOverlay()
-	}
 	a.systemPrompt = base
 	return a.sessionID
-}
-
-// RunPlanOnce 临时切换为 plan 模式执行单条 query，完成后恢复原 approval 模式。
-func (a *Agent) RunPlanOnce(ctx context.Context, query string, handler EventHandler) error {
-	prevPolicy := a.policy
-	planPolicy, err := approval.New(approval.ModePlan)
-	if err != nil {
-		return err
-	}
-	a.SetApprovalPolicy(planPolicy)
-	defer a.SetApprovalPolicy(prevPolicy)
-	return a.handleUserMessage(ctx, query, handler)
 }
 
 // RunReview 对 git diff / working tree 执行 code review，返回 review 文本。
@@ -269,10 +252,6 @@ func (a *Agent) FormatStatusSummary(sandbox, model string) string {
 	if a.policy != nil {
 		mode = a.policy.Mode()
 	}
-	skillName := a.activeSkill.Name
-	if skillName == "" {
-		skillName = "(none)"
-	}
 	limit := a.contextLimit
 	if limit <= 0 {
 		limit = 200000
@@ -281,13 +260,11 @@ func (a *Agent) FormatStatusSummary(sandbox, model string) string {
 approval: %s
 sandbox: %s
 session: %s
-skill: %s
 tokens: %d / %d`,
 		model,
 		mode,
 		sandbox,
 		a.sessionID,
-		skillName,
 		a.sessionInputTokens,
 		limit,
 	)

@@ -11,7 +11,8 @@ import (
 type PageKind int
 
 const (
-	PageChat PageKind = iota
+	PageWelcome PageKind = iota
+	PageChat
 	PagePermissions
 	PageSessions
 	PageMemories
@@ -30,6 +31,7 @@ type LineKind int
 const (
 	LineUser LineKind = iota
 	LineAssistant
+	LineThinking
 	LineTool
 	LineSystem
 )
@@ -124,6 +126,8 @@ type slashResult struct {
 	renameName          string
 	fork                bool
 	showUsage           bool
+	runSkill            string
+	skillQuery          string
 }
 
 // approvalModeIndex 返回 mode 在 approval.Modes 中的索引，未知模式返回 0。

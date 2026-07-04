@@ -13,7 +13,6 @@ import (
 	"github.com/tencent-docs/golem/internal/memory"
 	"github.com/tencent-docs/golem/internal/rules"
 	"github.com/tencent-docs/golem/internal/sandbox"
-	"github.com/tencent-docs/golem/internal/skills"
 	"github.com/tencent-docs/golem/internal/tools"
 )
 
@@ -30,11 +29,13 @@ type Agent struct {
 	confirm   ConfirmFunc
 	onSlash   SlashHandler
 	memory    MemoryProvider
+	skills    SkillProvider
 	onSession SessionEndHandler
 
-	systemPrompt   string
-	memoryInjected bool
-	messages       []llm.Message
+	systemPrompt    string
+	memoryInjected  bool
+	skillsInjected  bool
+	messages        []llm.Message
 
 	maxTokens int
 
@@ -47,7 +48,6 @@ type Agent struct {
 	hadUserMessages     bool
 
 	onDenial    DenialRecorder
-	activeSkill skills.Skill
 }
 
 // Options 配置 Agent 可选依赖；未设置的项使用 P0 安全默认值。
@@ -60,6 +60,7 @@ type Options struct {
 	Confirm     ConfirmFunc
 	Slash       SlashHandler
 	Memory      MemoryProvider
+	Skills      SkillProvider
 	OnSession   SessionEndHandler
 	InitialMsgs  []llm.Message
 	MemoryCfg    config.MemoryConfig
@@ -100,6 +101,10 @@ func New(projectRoot string, client llm.LLMClient, opts Options) (*Agent, error)
 	if memory == nil {
 		memory = NoopMemoryProvider{}
 	}
+	skillProvider := opts.Skills
+	if skillProvider == nil {
+		skillProvider = NoopSkillProvider{}
+	}
 	onSession := opts.OnSession
 	if onSession == nil {
 		onSession = NoopSessionEndHandler{}
@@ -120,6 +125,7 @@ func New(projectRoot string, client llm.LLMClient, opts Options) (*Agent, error)
 		confirm:      opts.Confirm,
 		onSlash:      opts.Slash,
 		memory:       memory,
+		skills:       skillProvider,
 		onSession:    onSession,
 		systemPrompt: systemPrompt,
 		messages:     msgs,
@@ -149,7 +155,7 @@ func (a *Agent) HandleInput(ctx context.Context, input string, handler EventHand
 	return true, nil
 }
 
-// handleUserMessage 将用户消息送入主循环，首条消息前注入 BM25 记忆（若尚未注入）。
+// handleUserMessage 将用户消息送入主循环，首条消息前注入 BM25 记忆与 Skill 渐进式披露（若尚未注入）。
 func (a *Agent) handleUserMessage(ctx context.Context, text string, handler EventHandler) error {
 	if !a.memoryInjected {
 		block, err := a.memory.InjectOnce(ctx, text)
@@ -160,6 +166,16 @@ func (a *Agent) handleUserMessage(ctx context.Context, text string, handler Even
 			a.systemPrompt += block
 		}
 		a.memoryInjected = true
+	}
+	if !a.skillsInjected {
+		block, err := a.skills.InjectOnce(ctx, text)
+		if err != nil {
+			return fmt.Errorf("inject skills: %w", err)
+		}
+		if block != "" {
+			a.systemPrompt += block
+		}
+		a.skillsInjected = true
 	}
 
 	a.messages = append(a.messages, llm.Message{

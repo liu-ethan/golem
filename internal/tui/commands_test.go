@@ -15,7 +15,7 @@ func TestParseSlashCommand(t *testing.T) {
 }
 
 func TestDispatchSlashHelp(t *testing.T) {
-	r := dispatchSlash("/help")
+	r := dispatchSlash("/help", nil)
 	if !r.handled || r.message == "" {
 		t.Fatalf("help result = %+v", r)
 	}
@@ -25,35 +25,35 @@ func TestDispatchSlashHelp(t *testing.T) {
 }
 
 func TestDispatchSlashPermissionsMode(t *testing.T) {
-	r := dispatchSlash("/permissions plan")
+	r := dispatchSlash("/permissions plan", nil)
 	if !r.handled || r.setMode != approval.ModePlan {
 		t.Fatalf("result = %+v", r)
 	}
 }
 
 func TestDispatchSlashPermissionsPage(t *testing.T) {
-	r := dispatchSlash("/permissions")
+	r := dispatchSlash("/permissions", nil)
 	if !r.handled || r.openPage != PagePermissions {
 		t.Fatalf("result = %+v", r)
 	}
 }
 
 func TestDispatchSlashSessionsPage(t *testing.T) {
-	r := dispatchSlash("/sessions")
+	r := dispatchSlash("/sessions", nil)
 	if !r.handled || r.openPage != PageSessions {
 		t.Fatalf("result = %+v", r)
 	}
 }
 
 func TestDispatchSlashExit(t *testing.T) {
-	r := dispatchSlash("/exit")
+	r := dispatchSlash("/exit", nil)
 	if !r.handled || !r.quit {
 		t.Fatalf("result = %+v", r)
 	}
 }
 
 func TestDispatchSlashUnknown(t *testing.T) {
-	r := dispatchSlash("/unknown-cmd")
+	r := dispatchSlash("/unknown-cmd", nil)
 	if !r.handled || r.message == "" {
 		t.Fatalf("result = %+v", r)
 	}
@@ -61,7 +61,7 @@ func TestDispatchSlashUnknown(t *testing.T) {
 
 func TestDispatchSlashPlainTextNotHandled(t *testing.T) {
 	for _, input := range []string{"你好", "hello", "read main.go"} {
-		r := dispatchSlash(input)
+		r := dispatchSlash(input, nil)
 		if r.handled {
 			t.Fatalf("input %q should not be handled as slash, got %+v", input, r)
 		}
@@ -69,7 +69,7 @@ func TestDispatchSlashPlainTextNotHandled(t *testing.T) {
 }
 
 func TestDispatchSlashBareSlash(t *testing.T) {
-	r := dispatchSlash("/")
+	r := dispatchSlash("/", nil)
 	if !r.handled || !strings.Contains(r.message, "未知命令") {
 		t.Fatalf("result = %+v", r)
 	}
@@ -82,46 +82,46 @@ func TestNormalizeApprovalMode(t *testing.T) {
 }
 
 func TestDispatchSlashCompact(t *testing.T) {
-	r := dispatchSlash("/compact keep file paths")
+	r := dispatchSlash("/compact keep file paths", nil)
 	if !r.handled || !r.compact || r.compactInstructions != "keep file paths" {
 		t.Fatalf("result = %+v", r)
 	}
 }
 
 func TestDispatchSlashUsage(t *testing.T) {
-	r := dispatchSlash("/usage")
+	r := dispatchSlash("/usage", nil)
 	if !r.handled || !r.showUsage {
 		t.Fatalf("result = %+v", r)
 	}
-	r = dispatchSlash("/cost")
+	r = dispatchSlash("/cost", nil)
 	if !r.handled || !r.showUsage {
 		t.Fatalf("cost alias result = %+v", r)
 	}
 }
 
 func TestDispatchSlashReview(t *testing.T) {
-	r := dispatchSlash("/review working-tree")
+	r := dispatchSlash("/review working-tree", nil)
 	if !r.handled || !r.runReview || r.reviewTarget != "working-tree" {
 		t.Fatalf("result = %+v", r)
 	}
 }
 
 func TestDispatchSlashExport(t *testing.T) {
-	r := dispatchSlash("/export out.md")
+	r := dispatchSlash("/export out.md", nil)
 	if !r.handled || !r.doExport || r.exportPath != "out.md" {
 		t.Fatalf("result = %+v", r)
 	}
 }
 
 func TestDispatchSlashSkillsPage(t *testing.T) {
-	r := dispatchSlash("/skills")
+	r := dispatchSlash("/skills", nil)
 	if !r.handled || r.openPage != PageSkills {
 		t.Fatalf("result = %+v", r)
 	}
 }
 
 func TestDispatchSlashPlan(t *testing.T) {
-	r := dispatchSlash("/plan refactor auth module")
+	r := dispatchSlash("/plan refactor auth module", nil)
 	if !r.handled || r.runPlan != "refactor auth module" {
 		t.Fatalf("result = %+v", r)
 	}

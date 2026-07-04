@@ -72,6 +72,49 @@ func TestStreamChatTextDelta(t *testing.T) {
 	}
 }
 
+func TestStreamChatThinkingDelta(t *testing.T) {
+	sseBody, err := os.ReadFile("testdata/stream_thinking.sse")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write(sseBody)
+	}))
+	defer srv.Close()
+
+	client := NewAnthropicClient(srv.URL, "test-key", "test-model")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	events, err := client.StreamChat(ctx, ChatRequest{
+		Messages: []Message{{Role: RoleUser, Content: []ContentBlock{{Type: "text", Text: "hi"}}}},
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+
+	var thinking, text strings.Builder
+	for evt := range events {
+		switch evt.Type {
+		case StreamEventThinkingDelta:
+			thinking.WriteString(evt.Text)
+		case StreamEventTextDelta:
+			text.WriteString(evt.Text)
+		case StreamEventError:
+			t.Fatalf("stream error: %v", evt.Err)
+		}
+	}
+
+	if got := thinking.String(); got != "Let me think" {
+		t.Errorf("thinking = %q", got)
+	}
+	if got := text.String(); got != "Answer here" {
+		t.Errorf("text = %q", got)
+	}
+}
+
 func TestCompleteReturnsTextAndUsage(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body messagesRequest

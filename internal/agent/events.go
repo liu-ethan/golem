@@ -6,6 +6,7 @@ import "context"
 type EventType string
 
 const (
+	EventThinkingDelta EventType = "thinking_delta"
 	EventTextDelta    EventType = "text_delta"
 	EventToolStart    EventType = "tool_start"
 	EventToolComplete EventType = "tool_complete"
@@ -42,11 +43,24 @@ type MemoryProvider interface {
 	InjectOnce(ctx context.Context, query string) (string, error)
 }
 
+// SkillProvider 在首条用户消息后、首次 StreamChat 前注入 Skill 渐进式披露块；P0 可用 NoopSkillProvider。
+type SkillProvider interface {
+	InjectOnce(ctx context.Context, query string) (string, error)
+}
+
 // NoopMemoryProvider 不注入任何记忆，供 P0 在 BM25 模块（Step 11/13）接入前使用。
 type NoopMemoryProvider struct{}
 
 // InjectOnce 返回空字符串，表示无额外记忆可注入。
 func (NoopMemoryProvider) InjectOnce(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
+// NoopSkillProvider 不注入任何 Skill 块。
+type NoopSkillProvider struct{}
+
+// InjectOnce 返回空字符串，表示无 Skill 可注入。
+func (NoopSkillProvider) InjectOnce(_ context.Context, _ string) (string, error) {
 	return "", nil
 }
 

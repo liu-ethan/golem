@@ -55,18 +55,21 @@ func Memories(width int, facts []MemoryFactView, injectEnabled bool, cursor int)
 type SkillEntry struct {
 	Name   string
 	Source string
-	Active bool
 }
 
 // Skills 渲染 /skills 子页。
-func Skills(width int, entries []SkillEntry, cursor int) string {
+func Skills(width int, entries []SkillEntry, cursor int, scanPaths []string) string {
 	if width < 20 {
 		width = 20
 	}
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("/skills — Skill 列表"))
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("↑/↓ 选择 · Enter 切换 · Esc 返回 · 空选清除 Skill"))
+	b.WriteString(dimStyle.Render("↑/↓ 选择 · Enter 填入 /skill-name · Esc 返回"))
+	if len(scanPaths) > 0 {
+		b.WriteString("\n")
+		b.WriteString(dimStyle.Render("扫描: " + strings.Join(scanPaths, " · ")))
+	}
 	b.WriteString("\n\n")
 
 	if len(entries) == 0 {
@@ -78,9 +81,6 @@ func Skills(width int, entries []SkillEntry, cursor int) string {
 	for i, e := range entries {
 		marker := modeMarker(i == cursor)
 		label := fmt.Sprintf("%s (%s)", e.Name, e.Source)
-		if e.Active {
-			label += "  ← 当前"
-		}
 		line := fmt.Sprintf("  %s %s", marker, truncate(label, width-8))
 		if i == cursor {
 			b.WriteString(activeStyle.Render(line))

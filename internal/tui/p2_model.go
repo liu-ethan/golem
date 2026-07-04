@@ -123,6 +123,11 @@ func (m Model) applySlash(r slashResult) (Model, tea.Cmd) {
 	if r.openPage == PageSkills {
 		return m, m.openSkillsPage()
 	}
+	if r.runSkill != "" {
+		label := fmt.Sprintf("[%s] %s", r.runSkill, r.skillQuery)
+		m.lines = append(m.lines, ChatLine{Kind: LineUser, Text: label})
+		return m, m.startSkillRun(r.runSkill, r.skillQuery)
+	}
 	if r.compact {
 		return m, m.runCompact(r.compactInstructions)
 	}
@@ -282,15 +287,13 @@ func (m Model) handleSkillsKey(key string) (Model, tea.Cmd) {
 		}
 	case "enter":
 		if len(m.skillsPage.Skills) == 0 {
-			m.agent.ClearSkill()
-			m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: "已清除 Skill"})
 			m.activePage = PageChat
 			return m, nil
 		}
 		skill := m.skillsPage.Skills[m.skillsPage.Cursor]
-		m.agent.SetSkill(skill)
-		m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: "已切换 Skill: " + skill.Name})
+		m.input = "/" + skill.Name + " "
 		m.activePage = PageChat
+		m.showCursor = true
 	case "esc":
 		m.activePage = PageChat
 	case "ctrl+c", "ctrl+d":
@@ -611,6 +614,11 @@ func (m *Model) startPlanRun(query string) tea.Cmd {
 	return nil
 }
 
+func (m *Model) startSkillRun(skillName, query string) tea.Cmd {
+	m.startAgentSkill(skillName, query)
+	return nil
+}
+
 func (m *Model) drainInputQueue() {
 	if len(m.inputQueue) == 0 || m.running {
 		return
@@ -621,13 +629,12 @@ func (m *Model) drainInputQueue() {
 	m.startAgentRun(next)
 }
 
-func skillPageEntries(list []skills.Skill, active string) []pages.SkillEntry {
+func skillPageEntries(list []skills.Skill) []pages.SkillEntry {
 	out := make([]pages.SkillEntry, len(list))
 	for i, s := range list {
 		out[i] = pages.SkillEntry{
 			Name:   s.Name,
 			Source: s.Source,
-			Active: s.Name == active,
 		}
 	}
 	return out

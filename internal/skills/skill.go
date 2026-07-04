@@ -31,6 +31,35 @@ func NewLoader(projectRoot string) *Loader {
 	return &Loader{projectRoot: projectRoot}
 }
 
+// ScanPaths 返回 Skill 扫描来源说明（builtin、全局、项目）。
+func ScanPaths(projectRoot string) []string {
+	home, err := os.UserHomeDir()
+	global := "~/.golem/skills"
+	if err == nil {
+		global = filepath.Join(home, ".golem", "skills")
+	}
+	return []string{
+		"builtin",
+		global,
+		filepath.Join(projectRoot, ".golem", "skills"),
+	}
+}
+
+// LoadByName 按名称加载 Skill，名称匹配不区分大小写。
+func (l *Loader) LoadByName(name string) (Skill, error) {
+	list, err := l.List()
+	if err != nil {
+		return Skill{}, err
+	}
+	lower := strings.ToLower(strings.TrimSpace(name))
+	for _, s := range list {
+		if strings.ToLower(s.Name) == lower {
+			return s, nil
+		}
+	}
+	return Skill{}, fmt.Errorf("skill not found: %s", name)
+}
+
 // List 返回全部可用 Skill，按名称排序；同名时项目级覆盖全局。
 func (l *Loader) List() ([]Skill, error) {
 	byName := map[string]Skill{}
@@ -231,6 +260,25 @@ func (s Skill) ToolAllowed(name string) bool {
 		}
 	}
 	return false
+}
+
+// Summary 返回 Skill 的一行摘要，供目录展示与 BM25 检索。
+func (s Skill) Summary() string {
+	for _, line := range strings.Split(s.SystemPrompt, "\n") {
+		line = strings.TrimSpace(strings.TrimLeft(line, "-•* "))
+		if line != "" {
+			if len([]rune(line)) > 120 {
+				return string([]rune(line)[:119]) + "…"
+			}
+			return line
+		}
+	}
+	return s.Name
+}
+
+// SearchText 返回用于 BM25 语义匹配的检索文本。
+func (s Skill) SearchText() string {
+	return s.Name + " " + strings.TrimSpace(s.SystemPrompt)
 }
 
 // PromptOverlay 返回应追加到 base system prompt 的 Skill 文本块。

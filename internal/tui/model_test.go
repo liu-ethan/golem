@@ -32,6 +32,7 @@ func TestModelShiftTabCyclesApproval(t *testing.T) {
 		Sandbox:     "workspace-write",
 		ContextLimit: 200000,
 	})
+	m.activePage = PageChat
 
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m2 := next.(Model)
@@ -113,7 +114,7 @@ func TestApplySlashSetMode(t *testing.T) {
 	ag, _ := agent.New(root, mock, agent.Options{Policy: policy})
 
 	m := NewModel(Config{ProjectRoot: root, Agent: ag, Policy: policy})
-	m2, _ := m.applySlash(dispatchSlash("/permissions plan"))
+	m2, _ := m.applySlash(dispatchSlash("/permissions plan", nil))
 	if m2.status.Approval != approval.ModePlan {
 		t.Fatalf("approval = %q", m2.status.Approval)
 	}

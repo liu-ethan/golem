@@ -2,23 +2,12 @@ package tui
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/tencent-docs/golem/internal/tui/pages"
-)
-
-var (
-	statusBarStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252")).
-			Background(lipgloss.Color("236")).
-			Padding(0, 1)
-	promptStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
-	userStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-	asstStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
-	sysStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
-	errStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+	"github.com/tencent-docs/golem/internal/tui/style"
+	"github.com/tencent-docs/golem/internal/skills"
 )
 
 // renderView 渲染完整 TUI 视图。
@@ -28,8 +17,14 @@ func renderView(m Model) string {
 		width = 40
 	}
 
+	if m.activePage == PageWelcome {
+		return renderWelcomePanel(m, width, m.height)
+	}
+
 	var body strings.Builder
 	body.WriteString(renderStatusBar(m.status))
+	body.WriteString("\n")
+	body.WriteString(renderSeparator(width))
 	body.WriteString("\n")
 
 	switch m.activePage {
@@ -40,7 +35,7 @@ func renderView(m Model) string {
 	case PageMemories:
 		body.WriteString(pages.Memories(width, pages.MemoryFactsToView(m.memories.Facts), m.memories.InjectEnabled, m.memories.Cursor))
 	case PageSkills:
-		body.WriteString(pages.Skills(width, skillPageEntries(m.skillsPage.Skills, m.agent.ActiveSkillName()), m.skillsPage.Cursor))
+		body.WriteString(pages.Skills(width, skillPageEntries(m.skillsPage.Skills), m.skillsPage.Cursor, skills.ScanPaths(m.projectRoot)))
 	default:
 		body.WriteString(renderChatArea(m, width))
 	}
@@ -51,47 +46,102 @@ func renderView(m Model) string {
 	}
 
 	body.WriteString("\n")
-	body.WriteString(promptStyle.Render("> "))
-	body.WriteString(m.input)
-	if m.running && m.activePage == PageChat {
-		body.WriteString(" ")
-		body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("▌"))
+	body.WriteString(renderSeparator(width))
+	body.WriteString("\n")
+
+	suggestions := matchSlashSuggestions(m.input, m.skillLoader)
+	if len(suggestions) > 0 && m.activePage == PageChat && !m.running {
+		body.WriteString(renderSlashSuggestions(suggestions, m.slashSel, width))
+		body.WriteString("\n")
 	}
+
+	body.WriteString(renderInputLine(m.input, m.running, m.showCursor))
 
 	if m.errMsg != "" && m.activePage == PageChat {
 		body.WriteString("\n")
-		body.WriteString(errStyle.Render(m.errMsg))
+		body.WriteString(style.ErrText.Render(m.errMsg))
 	}
 
+	body.WriteString("\n")
+	body.WriteString(renderFooter(m, len(suggestions) > 0))
+
 	return body.String()
+}
+
+// renderInputLine 渲染输入区：提示符、用户输入文本与光标。
+func renderInputLine(input string, running, showCursor bool) string {
+	var b strings.Builder
+	b.WriteString(style.Prompt.Render("❯ "))
+	if input != "" {
+		b.WriteString(style.UserText.Render(input))
+	}
+	if running || showCursor {
+		b.WriteString(style.Cursor.Render("▌"))
+	}
+	return b.String()
 }
 
 // renderStatusBar 渲染顶栏：project / approval / sandbox / session / tokens。
 func renderStatusBar(s StatusBar) string {
 	root := s.ProjectRoot
-	if home := filepath.Base(root); home != "" && home != "." {
-		if len(root) > 40 {
-			root = "…" + root[len(root)-36:]
+	if len(root) > 40 {
+		root = "…" + root[len(root)-36:]
+	}
+	sep := style.Muted.Render(" │ ")
+	var parts []string
+	parts = append(parts, style.Accent.Bold(true).Render("golem"))
+	parts = append(parts, style.PathText.Render(root))
+	parts = append(parts, style.Muted.Render(s.Approval))
+	parts = append(parts, style.Muted.Render(s.Sandbox))
+	parts = append(parts, style.AccentAlt.Render(shortID(s.SessionID)))
+	parts = append(parts, style.Muted.Render(formatTokens(s.InputTokens, s.ContextLimit)))
+	if s.Model != "" {
+		parts = append(parts, style.Emphasis.Render(s.Model))
+	}
+	line := " " + strings.Join(parts, sep)
+	return style.StatusBar.Width(0).Render(line)
+}
+
+// renderFooter 渲染底部快捷键提示栏。
+func renderFooter(m Model, slashActive bool) string {
+	var hints string
+	switch m.activePage {
+	case PagePermissions:
+		hints = "[Tab] 切换页  [↑↓] 选择  [Enter] 确认  [Esc] 返回"
+	case PageSessions:
+		hints = "[↑↓] 选择会话  [Enter] 恢复  [Esc] 返回"
+	case PageMemories:
+		hints = "[↑↓] 浏览  [i] 切换注入  [c] 清空  [Esc] 返回"
+	case PageSkills:
+		hints = "[↑↓] 选择  [Enter] 激活  [Esc] 返回"
+	default:
+		if slashActive {
+			hints = "[↑↓] 选择  [Tab] 补全  [Enter] 运行  [/] 命令"
+		} else if m.running {
+			hints = "[Ctrl+C] 取消  [Tab] 排队输入"
+		} else {
+			hints = "[Enter] 发送  [/] 命令  [Shift+Tab] approval  [Ctrl+L] 清屏  [?] /help"
 		}
 	}
-	line := fmt.Sprintf("📁 %s  🔒 %s  📦 %s  💬 %s  📊 %s",
-		root,
-		s.Approval,
-		s.Sandbox,
-		shortID(s.SessionID),
-		formatTokens(s.InputTokens, s.ContextLimit),
-	)
-	if s.Model != "" {
-		line += fmt.Sprintf("  🤖 %s", s.Model)
+	return style.Footer.Width(m.width).Render(hints)
+}
+
+func renderSeparator(width int) string {
+	if width < 4 {
+		width = 4
 	}
-	return statusBarStyle.Width(0).Render(line)
+	return style.Border.Render(strings.Repeat("─", width))
 }
 
 func renderChatArea(m Model, width int) string {
+	if chatIsEmpty(m) {
+		return renderChatHome(m, width)
+	}
+
 	var b strings.Builder
 	visible := m.lines
 	start := 0
-	maxLines := m.height - 8
+	maxLines := m.height - 12
 	if maxLines < 5 {
 		maxLines = 5
 	}
@@ -102,16 +152,19 @@ func renderChatArea(m Model, width int) string {
 	for _, line := range visible[start:] {
 		switch line.Kind {
 		case LineUser:
-			b.WriteString(userStyle.Render("  You: "))
-			b.WriteString(line.Text)
+			b.WriteString(style.UserLabel.Render("  You "))
+			b.WriteString(renderRichText(line.Text, style.UserText))
 			b.WriteString("\n")
 		case LineAssistant:
-			b.WriteString(asstStyle.Render("  Claude: "))
-			b.WriteString(line.Text)
+			b.WriteString(style.AsstLabel.Render("  Golem "))
+			b.WriteString(renderRichText(line.Text, style.AsstText))
+			b.WriteString("\n\n")
+		case LineThinking:
+			b.WriteString(renderThinkingBlock(line.Text, width, false))
 			b.WriteString("\n")
 		case LineSystem:
-			b.WriteString(sysStyle.Render("  "))
-			b.WriteString(line.Text)
+			b.WriteString(style.SysText.Render("  ◦ "))
+			b.WriteString(style.SysText.Render(line.Text))
 			b.WriteString("\n")
 		case LineTool:
 			b.WriteString(formatToolCard(line, width))
@@ -119,10 +172,99 @@ func renderChatArea(m Model, width int) string {
 		}
 	}
 
+	if m.thinkingStreaming != "" {
+		b.WriteString(renderThinkingBlock(m.thinkingStreaming, width, true))
+		b.WriteString("\n")
+	}
+
 	if m.streaming != "" {
-		b.WriteString(asstStyle.Render("  Claude: "))
-		b.WriteString(m.streaming)
-		b.WriteString("▌\n")
+		b.WriteString(style.AsstLabel.Render("  Golem "))
+		b.WriteString(renderRichText(m.streaming, style.AsstText))
+		b.WriteString(style.Cursor.Render("▌"))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// renderChatHome 在聊天空态渲染 Claude Code 风格主页 dashboard。
+func renderChatHome(m Model, width int) string {
+	areaHeight := m.height - 12
+	if areaHeight < 8 {
+		areaHeight = 8
+	}
+	boxed := renderHomeDashboard(m, width, dashboardInnerWidth(width))
+	boxH := lipgloss.Height(boxed)
+	padTop := (areaHeight - boxH) / 2
+	if padTop < 0 {
+		padTop = 0
+	}
+	return strings.Repeat("\n", padTop) + boxed + "\n"
+}
+
+// renderThinkingBlock 渲染思考过程区块，与最终答案视觉分离。
+func renderThinkingBlock(text string, width int, streaming bool) string {
+	if width < 20 {
+		width = 20
+	}
+	inner := width - 6
+	title := style.ThinkTitle.Render("  ┌─ Thinking ")
+	border := style.Border.Render(strings.Repeat("─", max(0, inner-len("Thinking ")-2)))
+	var b strings.Builder
+	b.WriteString(title)
+	b.WriteString(border)
+	b.WriteString("┐\n")
+
+	for _, line := range strings.Split(text, "\n") {
+		line = truncateRunes(line, inner)
+		b.WriteString(style.ThinkBody.Render("  │ " + line))
+		b.WriteString("\n")
+	}
+	if streaming {
+		b.WriteString(style.ThinkBody.Render("  │ "))
+		b.WriteString(style.Cursor.Render("▌"))
+		b.WriteString("\n")
+	}
+	b.WriteString(style.Border.Render("  └" + strings.Repeat("─", inner) + "┘"))
+	return b.String()
+}
+
+// renderSlashSuggestions 渲染斜杠命令补全下拉列表。
+func renderSlashSuggestions(suggestions []SlashSuggestion, sel int, width int) string {
+	if sel < 0 || sel >= len(suggestions) {
+		sel = 0
+	}
+	descWidth := 28
+	if width > 80 {
+		descWidth = 36
+	}
+	var b strings.Builder
+	b.WriteString(style.Muted.Render("  命令与 Skill 补全"))
+	b.WriteString("\n")
+	maxShow := 8
+	if len(suggestions) < maxShow {
+		maxShow = len(suggestions)
+	}
+	for i := 0; i < maxShow; i++ {
+		cmd := suggestions[i]
+		name := "/" + cmd.Name
+		pad := 16 - len(cmd.Name)
+		if pad < 1 {
+			pad = 1
+		}
+		if i == sel {
+			b.WriteString("  ")
+			b.WriteString(style.SlashSel.Render(name + strings.Repeat(" ", pad) + truncateRunes(cmd.Desc, descWidth)))
+		} else {
+			b.WriteString("  ")
+			b.WriteString(style.SlashItem.Render(name))
+			b.WriteString(strings.Repeat(" ", pad))
+			b.WriteString(style.SlashDesc.Render(truncateRunes(cmd.Desc, descWidth)))
+		}
+		b.WriteString("\n")
+	}
+	if len(suggestions) > maxShow {
+		b.WriteString(style.SlashDesc.Render(fmt.Sprintf("  … 还有 %d 条", len(suggestions)-maxShow)))
+		b.WriteString("\n")
 	}
 	return b.String()
 }

@@ -3,6 +3,8 @@ package skills
 import (
 	"strings"
 	"testing"
+
+	"github.com/tencent-docs/golem/internal/testutil"
 )
 
 func TestBuiltinSkillsList(t *testing.T) {
@@ -51,6 +53,26 @@ allow go *
 	}
 	if len(s.AllowedTools) != 2 || s.AllowedTools[0] != "bash" {
 		t.Fatalf("allowed = %v", s.AllowedTools)
+	}
+}
+
+func TestLoadByNameCaseInsensitive(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	loader := NewLoader(root)
+	s, err := loader.LoadByName("GOLANG-EXPERT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Name != "golang-expert" {
+		t.Fatalf("name = %q", s.Name)
+	}
+}
+
+func TestScanPaths(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	paths := ScanPaths(root)
+	if len(paths) != 3 || paths[0] != "builtin" {
+		t.Fatalf("paths = %v", paths)
 	}
 }
 

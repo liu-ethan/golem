@@ -22,15 +22,18 @@ type Model struct {
 	policy  *approval.Policy
 	program *tea.Program
 
-	lines         []ChatLine
-	input         string
-	streaming     string
-	streamStarted bool
-	confirm       *ConfirmState
+	lines              []ChatLine
+	input              string
+	streaming          string
+	thinkingStreaming  string
+	streamStarted      bool
+	confirm            *ConfirmState
+	slashSel           int
 
 	status StatusBar
 
 	projectRoot string
+	version     string
 	activePage  PageKind
 	permissions PermissionsPage
 	sessions    SessionsPage
@@ -43,17 +46,22 @@ type Model struct {
 	inputQueue  []string
 	lastEscAt   time.Time
 
-	running   bool
-	runCancel context.CancelFunc
-	width     int
-	height    int
-	errMsg    string
-	quitting  bool
+	running    bool
+	runCancel  context.CancelFunc
+	width      int
+	height     int
+	errMsg     string
+	quitting   bool
+	showCursor bool
 }
+
+// cursorBlinkMsg 驱动输入区光标闪烁。
+type cursorBlinkMsg struct{}
 
 // Config 启动 TUI 所需的依赖与展示参数。
 type Config struct {
 	ProjectRoot  string
+	Version      string
 	Agent        *agent.Agent
 	Store        *session.Store
 	Policy       *approval.Policy
@@ -89,23 +97,26 @@ func NewModel(cfg Config) Model {
 		policy:      cfg.Policy,
 		status:      status,
 		projectRoot: cfg.ProjectRoot,
-		activePage:  PageChat,
+		version:     cfg.Version,
+		activePage:  PageWelcome,
 		rulesLines:  cfg.RulesLines,
 		skillLoader: cfg.SkillLoader,
 		llmClient:   cfg.LLMClient,
 		permissions: PermissionsPage{Tab: PermTabModes, Cursor: approvalModeIndex(cfg.Policy.Mode())},
 		width:       80,
 		height:      24,
+		showCursor:  true,
 	}
 	if len(cfg.Agent.Messages()) > 0 {
 		m.lines = rebuildChatFromMessages(cfg.Agent.Messages())
+		m.activePage = PageChat
 	}
 	return m
 }
 
 // Init 实现 tea.Model。
 func (m Model) Init() tea.Cmd {
-	return nil
+	return blinkCursor()
 }
 
 // Update 实现 tea.Model。
@@ -115,6 +126,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
+
+	case cursorBlinkMsg:
+		m.showCursor = !m.showCursor
+		return m, blinkCursor()
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -211,6 +226,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	}
 
 	switch m.activePage {
+	case PageWelcome:
+		return m.handleWelcomeKey(key)
 	case PagePermissions:
 		return m.handlePermissionsKey(key)
 	case PageSessions:
@@ -268,7 +285,26 @@ func (m Model) handleSessionsKey(key string) (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleWelcomeKey(key string) (Model, tea.Cmd) {
+	switch key {
+	case "enter", " ":
+		m.activePage = PageChat
+	case "q", "ctrl+c", "ctrl+d":
+		return m.quit()
+	}
+	return m, nil
+}
+
 func (m Model) handleChatKey(msg tea.KeyMsg, key string) (Model, tea.Cmd) {
+	suggestions := matchSlashSuggestions(m.input, m.skillLoader)
+	slashActive := len(suggestions) > 0
+
+	if slashActive && key == "tab" {
+		m.input = completeSlashInput(m.input, m.slashSel, suggestions)
+		m.slashSel = 0
+		return m, nil
+	}
+
 	if isShiftTab(msg) {
 		mode := m.policy.CycleMode()
 		m.agent.SetApprovalPolicy(m.policy)
@@ -295,6 +331,7 @@ func (m Model) handleChatKey(msg tea.KeyMsg, key string) (Model, tea.Cmd) {
 	if key == "ctrl+l" {
 		m.lines = nil
 		m.streaming = ""
+		m.thinkingStreaming = ""
 		return m, nil
 	}
 	if key == "ctrl+g" {
@@ -302,6 +339,16 @@ func (m Model) handleChatKey(msg tea.KeyMsg, key string) (Model, tea.Cmd) {
 	}
 
 	switch key {
+	case "up", "k":
+		if slashActive && m.slashSel > 0 {
+			m.slashSel--
+			return m, nil
+		}
+	case "down", "j":
+		if slashActive && m.slashSel < len(suggestions)-1 {
+			m.slashSel++
+			return m, nil
+		}
 	case "enter":
 		return m.submitInput()
 	case "ctrl+c", "ctrl+d":
@@ -310,6 +357,7 @@ func (m Model) handleChatKey(msg tea.KeyMsg, key string) (Model, tea.Cmd) {
 		if len(m.input) > 0 {
 			r := []rune(m.input)
 			m.input = string(r[:len(r)-1])
+			m.slashSel = 0
 		}
 	case "esc":
 		if strings.TrimSpace(m.input) == "" {
@@ -325,19 +373,33 @@ func (m Model) handleChatKey(msg tea.KeyMsg, key string) (Model, tea.Cmd) {
 	default:
 		if len(msg.Runes) > 0 {
 			m.input += string(msg.Runes)
+			m.slashSel = 0
+			m.showCursor = true
 		}
 	}
 	return m, nil
 }
 
+// blinkCursor 返回周期性光标闪烁 tick。
+func blinkCursor() tea.Cmd {
+	return tea.Tick(530*time.Millisecond, func(time.Time) tea.Msg {
+		return cursorBlinkMsg{}
+	})
+}
+
 func (m Model) submitInput() (Model, tea.Cmd) {
 	raw := m.input
+	suggestions := matchSlashSuggestions(raw, m.skillLoader)
+	if len(suggestions) > 0 {
+		raw = resolveSlashInput(raw, m.slashSel, suggestions)
+	}
 	m.input = ""
+	m.slashSel = 0
 	if raw == "" {
 		return m, nil
 	}
 
-	if slash := dispatchSlash(raw); slash.handled {
+	if slash := dispatchSlash(raw, m.skillLoader); slash.handled {
 		return m.applySlash(slash)
 	}
 

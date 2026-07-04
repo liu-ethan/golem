@@ -14,6 +14,7 @@ import (
 	"github.com/tencent-docs/golem/internal/memory"
 	"github.com/tencent-docs/golem/internal/rules"
 	"github.com/tencent-docs/golem/internal/session"
+	"github.com/tencent-docs/golem/internal/skills"
 	"github.com/tencent-docs/golem/internal/testutil"
 )
 
@@ -550,5 +551,61 @@ func TestRestoreStateSkipsDuplicateSummary(t *testing.T) {
 	ag.RestoreState(withSummary, false, "已有摘要")
 	if len(ag.Messages()) != 1 {
 		t.Fatalf("messages = %d, want 1 without duplicate", len(ag.Messages()))
+	}
+}
+
+// TestBM25SkillProviderInjectsCatalog 验证首条 user 消息前注入 Skill 目录与语义匹配块。
+func TestBM25SkillProviderInjectsCatalog(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	mock := testutil.NewMockLLM()
+	mock.StreamResponses = []testutil.MockResponse{{Events: textEvents("ok")}}
+
+	ag, err := New(root, mock, Options{
+		Skills: BM25SkillProvider{
+			Loader:    skills.NewLoader(root),
+			Retriever: memory.NewBM25Retriever(),
+			TopK:      2,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(ag.SystemPrompt(), "可用 Skills") {
+		t.Error("skill block should not be present before first user message")
+	}
+
+	_, err = ag.HandleInput(context.Background(), "帮我 review Go 代码", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ag.SystemPrompt(), "可用 Skills") {
+		t.Errorf("system prompt = %q", ag.SystemPrompt())
+	}
+	if !strings.Contains(ag.SystemPrompt(), "自动匹配的相关 Skill") {
+		t.Error("expected matched skills block")
+	}
+}
+
+// TestRunSkillOnceDoesNotPersistOverlay 验证 RunSkillOnce 仅本轮追加 Skill，结束后恢复 prompt。
+func TestRunSkillOnceDoesNotPersistOverlay(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	mock := testutil.NewMockLLM()
+	mock.StreamResponses = []testutil.MockResponse{{Events: textEvents("ok")}}
+
+	ag, err := New(root, mock, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loader := skills.NewLoader(root)
+	skill, err := loader.LoadByName("code-reviewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	basePrompt := ag.SystemPrompt()
+	if err := ag.RunSkillOnce(context.Background(), skill, "看一下 diff", nil); err != nil {
+		t.Fatal(err)
+	}
+	if ag.SystemPrompt() != basePrompt {
+		t.Errorf("prompt should restore after RunSkillOnce, got %q", ag.SystemPrompt())
 	}
 }

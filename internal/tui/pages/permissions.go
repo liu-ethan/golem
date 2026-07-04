@@ -5,15 +5,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/tencent-docs/golem/internal/approval"
+	"github.com/tencent-docs/golem/internal/tui/style"
 )
 
 var (
-	titleStyle  = lipgloss.NewStyle().Bold(true)
-	activeStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
-	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	ruleStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	titleStyle  = style.Title
+	activeStyle = style.Active
+	dimStyle    = style.Dim
+	ruleStyle   = style.Rule
 )
 
 // Permissions 渲染 /permissions 子页：上半区 approval 模式列表，下半区 rules 只读展示。

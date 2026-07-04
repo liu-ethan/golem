@@ -50,6 +50,10 @@ func (a *Agent) runStreamTurn(ctx context.Context, handler EventHandler) (stream
 			return streamResult{}, ctx.Err()
 		}
 		switch evt.Type {
+		case llm.StreamEventThinkingDelta:
+			if handler != nil {
+				handler(Event{Type: EventThinkingDelta, Text: evt.Text})
+			}
 		case llm.StreamEventTextDelta:
 			textBuf.WriteString(evt.Text)
 			if handler != nil {
