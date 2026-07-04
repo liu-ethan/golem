@@ -134,8 +134,10 @@ func buildAssistantMessage(text string, toolUses []llm.ContentBlock) llm.Message
 	return llm.Message{Role: llm.RoleAssistant, Content: content}
 }
 
-// executeToolCalls 依次执行 tool_use 块，将 tool_result 追加到 messages。
+// executeToolCalls 依次执行 tool_use 块，将全部 tool_result 合并为单条 user 消息追加到 messages。
+// Anthropic Messages API 要求同一条 assistant 消息中的所有 tool_use 必须在同一条 user 消息中回应。
 func (a *Agent) executeToolCalls(ctx context.Context, toolUses []llm.ContentBlock, handler EventHandler) error {
+	var results []llm.ContentBlock
 	for _, tu := range toolUses {
 		if tu.Type != "tool_use" {
 			continue
@@ -154,14 +156,17 @@ func (a *Agent) executeToolCalls(ctx context.Context, toolUses []llm.ContentBloc
 				ToolError:  isErr,
 			})
 		}
+		results = append(results, llm.ContentBlock{
+			Type:      "tool_result",
+			ToolUseID: tu.ID,
+			Content:   result,
+			IsError:   isErr,
+		})
+	}
+	if len(results) > 0 {
 		a.messages = append(a.messages, llm.Message{
-			Role: llm.RoleUser,
-			Content: []llm.ContentBlock{{
-				Type:      "tool_result",
-				ToolUseID: tu.ID,
-				Content:   result,
-				IsError:   isErr,
-			}},
+			Role:    llm.RoleUser,
+			Content: results,
 		})
 	}
 	return nil
@@ -171,13 +176,17 @@ func (a *Agent) executeToolCalls(ctx context.Context, toolUses []llm.ContentBloc
 func (a *Agent) dispatchTool(ctx context.Context, name string, input map[string]any) (result string, isErr bool, err error) {
 	if a.gate.IsDenied(name, input) {
 		msg := fmt.Sprintf("Error: denied by approval policy (tool=%s)", name)
+		reason := "approval policy"
 		if rd, ok := a.gate.(RuleDenier); ok && rd.DeniedByRule(name, input) {
 			msg = fmt.Sprintf("Error: denied by permission rule (tool=%s)", name)
+			reason = "permission rule"
 		}
+		a.recordDenial(name, input, reason)
 		return msg, true, nil
 	}
 	if a.gate.ShouldConfirm(name, input) {
 		if a.confirm == nil {
+			a.recordDenial(name, input, "user denied")
 			return "Error: user denied tool execution", true, nil
 		}
 		ok, confirmErr := a.confirm(name, input)
@@ -185,6 +194,7 @@ func (a *Agent) dispatchTool(ctx context.Context, name string, input map[string]
 			return "", false, confirmErr
 		}
 		if !ok {
+			a.recordDenial(name, input, "user denied")
 			return "Error: user denied tool execution", true, nil
 		}
 	}
@@ -193,6 +203,14 @@ func (a *Agent) dispatchTool(ctx context.Context, name string, input map[string]
 		return execErr.Error(), true, nil
 	}
 	return out, false, nil
+}
+
+// recordDenial 调用 DenialRecorder 持久化拒绝记录。
+func (a *Agent) recordDenial(name string, input map[string]any, reason string) {
+	if a.onDenial == nil {
+		return
+	}
+	a.onDenial(name, input, reason)
 }
 
 // runAgentLoop 在用户消息已追加后，循环 StreamChat → 执行 tool_use 直至无工具调用。

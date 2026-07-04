@@ -2,7 +2,9 @@ package tui
 
 import (
 	"github.com/tencent-docs/golem/internal/approval"
+	"github.com/tencent-docs/golem/internal/memory"
 	"github.com/tencent-docs/golem/internal/session"
+	"github.com/tencent-docs/golem/internal/skills"
 )
 
 // PageKind 标识 TUI 当前激活的子页面。
@@ -12,6 +14,14 @@ const (
 	PageChat PageKind = iota
 	PagePermissions
 	PageSessions
+	PageMemories
+	PageSkills
+)
+
+const (
+	PermTabModes  = 0
+	PermTabDenied = 1
+	PermTabRules  = 2
 )
 
 // LineKind 标识聊天区单行内容的类型。
@@ -66,7 +76,9 @@ type ConfirmState struct {
 
 // PermissionsPage 保存 /permissions 子页状态。
 type PermissionsPage struct {
+	Tab    int
 	Cursor int
+	Denied []session.DenialEntry
 }
 
 // SessionsPage 保存 /sessions 子页状态。
@@ -75,15 +87,43 @@ type SessionsPage struct {
 	Cursor  int
 }
 
+// MemoriesPage 保存 /memories 子页状态。
+type MemoriesPage struct {
+	Facts         []memory.MemoryFact
+	InjectEnabled bool
+	Cursor        int
+}
+
+// SkillsPage 保存 /skills 子页状态。
+type SkillsPage struct {
+	Skills []skills.Skill
+	Cursor int
+}
+
 // slashResult 为斜杠命令本地处理结果。
 type slashResult struct {
-	handled  bool
-	quit     bool
-	message  string
-	openPage PageKind
-	setMode  string
-	compact  bool
+	handled             bool
+	quit                bool
+	message             string
+	openPage            PageKind
+	setMode             string
+	setSandbox          string
+	setModel            string
+	compact             bool
 	compactInstructions string
+	reviewTarget        string
+	runReview           bool
+	runInit             bool
+	initWrite           bool
+	runPlan             string
+	runAgent            string
+	clearScreen         bool
+	clearContext        bool
+	exportPath          string
+	doExport            bool
+	renameName          string
+	fork                bool
+	showUsage           bool
 }
 
 // approvalModeIndex 返回 mode 在 approval.Modes 中的索引，未知模式返回 0。

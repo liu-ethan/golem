@@ -13,6 +13,7 @@ import (
 	"github.com/tencent-docs/golem/internal/memory"
 	"github.com/tencent-docs/golem/internal/rules"
 	"github.com/tencent-docs/golem/internal/sandbox"
+	"github.com/tencent-docs/golem/internal/skills"
 	"github.com/tencent-docs/golem/internal/tools"
 )
 
@@ -44,6 +45,9 @@ type Agent struct {
 	sessionInputTokens  int
 	sessionOutputTokens int
 	hadUserMessages     bool
+
+	onDenial    DenialRecorder
+	activeSkill skills.Skill
 }
 
 // Options 配置 Agent 可选依赖；未设置的项使用 P0 安全默认值。

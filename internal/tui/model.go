@@ -3,11 +3,15 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/tencent-docs/golem/internal/agent"
 	"github.com/tencent-docs/golem/internal/approval"
+	"github.com/tencent-docs/golem/internal/llm"
 	"github.com/tencent-docs/golem/internal/session"
+	"github.com/tencent-docs/golem/internal/skills"
 	"github.com/tencent-docs/golem/internal/tui/pages"
 )
 
@@ -30,7 +34,14 @@ type Model struct {
 	activePage  PageKind
 	permissions PermissionsPage
 	sessions    SessionsPage
+	memories    MemoriesPage
+	skillsPage  SkillsPage
 	rulesLines  []string
+
+	skillLoader *skills.Loader
+	llmClient   llm.LLMClient
+	inputQueue  []string
+	lastEscAt   time.Time
 
 	running   bool
 	runCancel context.CancelFunc
@@ -50,6 +61,8 @@ type Config struct {
 	ModelName    string
 	ContextLimit int
 	RulesLines   []string
+	SkillLoader  *skills.Loader
+	LLMClient    llm.LLMClient
 }
 
 // NewModel 根据 Config 构造初始 Bubble Tea Model。
@@ -78,7 +91,9 @@ func NewModel(cfg Config) Model {
 		projectRoot: cfg.ProjectRoot,
 		activePage:  PageChat,
 		rulesLines:  cfg.RulesLines,
-		permissions: PermissionsPage{Cursor: approvalModeIndex(cfg.Policy.Mode())},
+		skillLoader: cfg.SkillLoader,
+		llmClient:   cfg.LLMClient,
+		permissions: PermissionsPage{Tab: PermTabModes, Cursor: approvalModeIndex(cfg.Policy.Mode())},
 		width:       80,
 		height:      24,
 	}
@@ -159,16 +174,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case compactDoneMsg:
-		m.syncStatus()
-		if msg.err != nil {
-			m.errMsg = msg.err.Error()
-			m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: "Compact 失败: " + msg.err.Error()})
-			return m, nil
-		}
-		m.lines = rebuildChatFromMessages(m.agent.Messages())
-		m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: msg.message})
-		_ = syncMessages(m.store, m.agent)
-		return m, nil
+		return m.handleCompactDone(msg)
+	case reviewDoneMsg:
+		return m.handleReviewDone(msg)
+	case initDoneMsg:
+		return m.handleInitDone(msg)
+	case forkDoneMsg:
+		return m.handleForkDone(msg)
+	case exportDoneMsg:
+		return m.handleExportDone(msg)
+	case renameDoneMsg:
+		return m.handleRenameDone(msg)
+	case layer2DoneMsg:
+		return m.handleLayer2Done(msg)
+	case diffDoneMsg:
+		return m.handleDiffDone(msg)
+	case deniedOpenMsg:
+		return m.handleDeniedOpen(msg)
+	case memoriesOpenMsg:
+		return m.handleMemoriesOpen(msg)
+	case skillsOpenMsg:
+		return m.handleSkillsOpen(msg)
+	case editorDoneMsg:
+		return m.handleEditorDone(msg)
+	case retryDoneMsg:
+		return m.handleRetryDone(msg)
 	}
 	return m, nil
 }
@@ -185,6 +215,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m.handlePermissionsKey(key)
 	case PageSessions:
 		return m.handleSessionsKey(key)
+	case PageMemories:
+		return m.handleMemoriesKey(key)
+	case PageSkills:
+		return m.handleSkillsKey(key)
 	default:
 		return m.handleChatKey(msg, key)
 	}
@@ -206,31 +240,6 @@ func (m Model) handleConfirmKey(key string) (Model, tea.Cmd) {
 		default:
 		}
 		m.confirm = nil
-	}
-	return m, nil
-}
-
-func (m Model) handlePermissionsKey(key string) (Model, tea.Cmd) {
-	switch key {
-	case "up", "k":
-		if m.permissions.Cursor > 0 {
-			m.permissions.Cursor--
-		}
-	case "down", "j":
-		if m.permissions.Cursor < len(approval.Modes)-1 {
-			m.permissions.Cursor++
-		}
-	case "enter":
-		mode := approval.Modes[m.permissions.Cursor]
-		var err error
-		m, err = m.applyApprovalMode(mode)
-		if err != nil {
-			m.errMsg = err.Error()
-		}
-	case "esc":
-		m.activePage = PageChat
-	case "ctrl+c", "ctrl+d":
-		return m.quit()
 	}
 	return m, nil
 }
@@ -274,7 +283,22 @@ func (m Model) handleChatKey(msg tea.KeyMsg, key string) (Model, tea.Cmd) {
 			m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: "（已取消当前轮次）"})
 			return m, nil
 		}
+		if key == "tab" && strings.TrimSpace(m.input) != "" {
+			m.inputQueue = append(m.inputQueue, m.input)
+			m.input = ""
+			m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: "（已排队下一条输入）"})
+			return m, nil
+		}
 		return m, nil
+	}
+
+	if key == "ctrl+l" {
+		m.lines = nil
+		m.streaming = ""
+		return m, nil
+	}
+	if key == "ctrl+g" {
+		return m, m.openExternalEditor()
 	}
 
 	switch key {
@@ -288,7 +312,16 @@ func (m Model) handleChatKey(msg tea.KeyMsg, key string) (Model, tea.Cmd) {
 			m.input = string(r[:len(r)-1])
 		}
 	case "esc":
-		// 空闲时忽略 Esc
+		if strings.TrimSpace(m.input) == "" {
+			if time.Since(m.lastEscAt) < 500*time.Millisecond {
+				if prev := m.lastUserMessage(); prev != "" {
+					m.input = prev
+				}
+				m.lastEscAt = time.Time{}
+				return m, nil
+			}
+			m.lastEscAt = time.Now()
+		}
 	default:
 		if len(msg.Runes) > 0 {
 			m.input += string(msg.Runes)
@@ -310,37 +343,6 @@ func (m Model) submitInput() (Model, tea.Cmd) {
 
 	m.lines = append(m.lines, ChatLine{Kind: LineUser, Text: raw})
 	m.startAgentRun(raw)
-	return m, nil
-}
-
-func (m Model) applySlash(r slashResult) (Model, tea.Cmd) {
-	if r.quit {
-		return m.quit()
-	}
-	if r.setMode != "" {
-		var err error
-		m, err = m.applyApprovalMode(r.setMode)
-		if err != nil {
-			m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: err.Error()})
-		} else if r.message != "" {
-			m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: r.message})
-		}
-		return m, nil
-	}
-	if r.openPage == PagePermissions {
-		m.activePage = PagePermissions
-		m.permissions.Cursor = approvalModeIndex(m.policy.Mode())
-		return m, nil
-	}
-	if r.openPage == PageSessions {
-		return m, m.openSessionsPage()
-	}
-	if r.compact {
-		return m, m.runCompact(r.compactInstructions)
-	}
-	if r.message != "" {
-		m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: r.message})
-	}
 	return m, nil
 }
 

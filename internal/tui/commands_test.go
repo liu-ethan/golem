@@ -88,6 +88,45 @@ func TestDispatchSlashCompact(t *testing.T) {
 	}
 }
 
+func TestDispatchSlashUsage(t *testing.T) {
+	r := dispatchSlash("/usage")
+	if !r.handled || !r.showUsage {
+		t.Fatalf("result = %+v", r)
+	}
+	r = dispatchSlash("/cost")
+	if !r.handled || !r.showUsage {
+		t.Fatalf("cost alias result = %+v", r)
+	}
+}
+
+func TestDispatchSlashReview(t *testing.T) {
+	r := dispatchSlash("/review working-tree")
+	if !r.handled || !r.runReview || r.reviewTarget != "working-tree" {
+		t.Fatalf("result = %+v", r)
+	}
+}
+
+func TestDispatchSlashExport(t *testing.T) {
+	r := dispatchSlash("/export out.md")
+	if !r.handled || !r.doExport || r.exportPath != "out.md" {
+		t.Fatalf("result = %+v", r)
+	}
+}
+
+func TestDispatchSlashSkillsPage(t *testing.T) {
+	r := dispatchSlash("/skills")
+	if !r.handled || r.openPage != PageSkills {
+		t.Fatalf("result = %+v", r)
+	}
+}
+
+func TestDispatchSlashPlan(t *testing.T) {
+	r := dispatchSlash("/plan refactor auth module")
+	if !r.handled || r.runPlan != "refactor auth module" {
+		t.Fatalf("result = %+v", r)
+	}
+}
+
 func TestFormatTokens(t *testing.T) {
 	if got := formatTokens(12400, 200000); got != "12.4k / 200k" {
 		t.Fatalf("got %q", got)

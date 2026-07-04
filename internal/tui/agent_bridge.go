@@ -88,6 +88,47 @@ func (m *Model) startAgentRun(input string) {
 	}()
 }
 
+// startAgentPlan 在 plan 模式下执行单条 query。
+func (m *Model) startAgentPlan(input string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	m.runCancel = cancel
+	m.running = true
+	m.streaming = ""
+	m.streamStarted = false
+
+	go func() {
+		handler := func(evt agent.Event) {
+			if m.program != nil {
+				m.program.Send(agentEventMsg(evt))
+			}
+		}
+		confirm := func(toolName string, input map[string]any) (bool, error) {
+			resp := make(chan bool, 1)
+			if m.program != nil {
+				m.program.Send(confirmRequestMsg{
+					toolName: toolName,
+					input:    input,
+					resp:     resp,
+				})
+			}
+			select {
+			case ok := <-resp:
+				return ok, nil
+			case <-ctx.Done():
+				return false, ctx.Err()
+			}
+		}
+		m.agent.SetConfirm(confirm)
+		err := m.agent.RunPlanOnce(ctx, input, handler)
+		if err != nil && ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		if m.program != nil {
+			m.program.Send(agentDoneMsg{err: err})
+		}
+	}()
+}
+
 // cancelAgentRun 取消当前 Agent 流式轮次。
 func (m *Model) cancelAgentRun() {
 	if m.runCancel != nil {
@@ -140,6 +181,7 @@ func (m *Model) handleAgentDone(msg agentDoneMsg) {
 	if msg.err == nil || msg.err == context.Canceled {
 		_ = syncMessages(m.store, m.agent)
 	}
+	m.drainInputQueue()
 }
 
 func (m *Model) flushStreaming() {

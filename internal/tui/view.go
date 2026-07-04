@@ -34,9 +34,13 @@ func renderView(m Model) string {
 
 	switch m.activePage {
 	case PagePermissions:
-		body.WriteString(pages.Permissions(width, m.height, m.status.Approval, m.permissions.Cursor, m.rulesLines))
+		body.WriteString(renderPermissionsPage(m, width))
 	case PageSessions:
 		body.WriteString(pages.Sessions(width, sessionPageEntries(m.sessions.Entries), m.sessions.Cursor, m.agent.SessionID()))
+	case PageMemories:
+		body.WriteString(pages.Memories(width, pages.MemoryFactsToView(m.memories.Facts), m.memories.InjectEnabled, m.memories.Cursor))
+	case PageSkills:
+		body.WriteString(pages.Skills(width, skillPageEntries(m.skillsPage.Skills, m.agent.ActiveSkillName()), m.skillsPage.Cursor))
 	default:
 		body.WriteString(renderChatArea(m, width))
 	}

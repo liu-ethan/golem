@@ -21,6 +21,7 @@ type Registry struct {
 	projectRoot string
 	sandboxMode sandbox.SandboxMode
 	tools       map[string]Tool
+	toolFilter  func(string) bool
 }
 
 // NewRegistry 创建绑定 projectRoot 的内置工具注册表；mode 为空时默认 workspace-write。
@@ -39,6 +40,7 @@ func NewRegistry(projectRoot string, mode sandbox.SandboxMode) *Registry {
 	r.register(editFileTool(projectRoot))
 	r.register(listDirTool(projectRoot))
 	r.register(grepTool(projectRoot))
+	r.register(webSearchTool())
 	return r
 }
 
@@ -48,11 +50,14 @@ func (r *Registry) register(tool Tool) {
 
 // Definitions 返回全部工具的 Anthropic ToolDefinition，供 StreamChat 注册。
 func (r *Registry) Definitions() []llm.ToolDefinition {
-	names := []string{"bash", "read_file", "write_file", "edit_file", "list_dir", "grep"}
+	names := []string{"bash", "read_file", "write_file", "edit_file", "list_dir", "grep", "web_search"}
 	defs := make([]llm.ToolDefinition, 0, len(names))
 	for _, name := range names {
 		tool, ok := r.tools[name]
 		if !ok {
+			continue
+		}
+		if r.toolFilter != nil && !r.toolFilter(name) {
 			continue
 		}
 		defs = append(defs, llm.ToolDefinition{
@@ -66,11 +71,24 @@ func (r *Registry) Definitions() []llm.ToolDefinition {
 
 // Execute 按名称调用工具；未知工具或参数错误时返回 error。
 func (r *Registry) Execute(ctx context.Context, name string, input map[string]any) (string, error) {
+	if r.toolFilter != nil && !r.toolFilter(name) {
+		return "", fmt.Errorf("tool denied by active skill: %s", name)
+	}
 	tool, ok := r.tools[name]
 	if !ok {
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
 	return tool.Execute(ctx, input)
+}
+
+// SetToolFilter 设置 Skill 工具过滤函数。
+func (r *Registry) SetToolFilter(fn func(string) bool) {
+	r.toolFilter = fn
+}
+
+// ClearToolFilter 清除 Skill 工具过滤。
+func (r *Registry) ClearToolFilter() {
+	r.toolFilter = nil
 }
 
 // ProjectRoot 返回注册表绑定的项目根目录。

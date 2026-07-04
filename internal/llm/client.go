@@ -161,6 +161,18 @@ func NewAnthropicClient(baseURL, apiKey, model string, opts ...ClientOption) *An
 	return c
 }
 
+// SetModel 运行时切换模型名。
+func (c *AnthropicClient) SetModel(model string) {
+	if model != "" {
+		c.model = model
+	}
+}
+
+// Model 返回当前配置的模型名。
+func (c *AnthropicClient) Model() string {
+	return c.model
+}
+
 // StreamChat 发起流式 Messages API 请求，在 goroutine 中解析 SSE 并写入 channel。
 func (c *AnthropicClient) StreamChat(ctx context.Context, req ChatRequest) (<-chan StreamEvent, error) {
 	body, err := c.buildRequestBody(req.System, req.Messages, req.Tools, req.MaxTokens, true)

@@ -10,14 +10,14 @@ func TestRegistryDefinitions(t *testing.T) {
 	reg := NewRegistry(root, "")
 
 	defs := reg.Definitions()
-	if len(defs) != 6 {
-		t.Fatalf("Definitions() len = %d, want 6", len(defs))
+	if len(defs) != 7 {
+		t.Fatalf("Definitions() len = %d, want 7", len(defs))
 	}
 	names := make(map[string]bool, len(defs))
 	for _, def := range defs {
 		names[def.Name] = true
 	}
-	for _, want := range []string{"bash", "read_file", "write_file", "edit_file", "list_dir", "grep"} {
+	for _, want := range []string{"bash", "read_file", "write_file", "edit_file", "list_dir", "grep", "web_search"} {
 		if !names[want] {
 			t.Fatalf("missing tool definition: %s", want)
 		}

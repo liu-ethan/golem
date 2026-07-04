@@ -5,21 +5,40 @@ import (
 	"strings"
 
 	"github.com/tencent-docs/golem/internal/approval"
+	"github.com/tencent-docs/golem/internal/sandbox"
 )
 
-const helpText = `P0 斜杠命令：
+const helpText = `斜杠命令：
   /help                     列出命令与快捷键
-  /permissions              权限页：切换 approval + 查看 rules
+  /permissions              权限页：approval + rules + Recently denied
   /permissions <mode>       直接设定 plan | ask-before-edit | ask | edit-automatically
   /sessions                 最近会话列表，Enter 恢复
-  /compact [instructions]   手动触发 Layer 0 上下文压缩
+  /status                   显示 model / approval / sandbox / session / tokens
+  /model [model]            运行时切换 LLM 模型
+  /clear                    清空上下文开新会话（保留 user_profile）
+  /compact [instructions]   手动触发 Layer 0 压缩
+  /context                  可视化 context 占用
+  /diff                     显示 working tree git diff
+  /sandbox [mode]           切换或设定 sandbox 模式
+  /review [target]          对 working tree / commit 跑 code review
+  /memories                 查看/管理 memory_facts
+  /usage (/cost)            会话 token 统计
+  /fork                     分叉当前会话到新 session
+  /export [file]            导出当前会话为 markdown
+  /rename [name]            重命名当前 session
+  /plan <query>             单条 plan 模式 query
+  /skills                   Skill 列表页
+  /init                     生成 AGENTS.md 模板
   /exit                     结束会话并退出
 
 快捷键：
   Shift+Tab                 循环 approval 模式
+  Ctrl+L                    清屏（保留对话）
+  Esc×2（空输入）           编辑上一条 user 消息
+  Tab（流式中）             排队下一条输入
+  Ctrl+G                    外部编辑器撰写输入
   Ctrl+C（流式中）          取消当前 LLM 轮次
   Ctrl+C（空闲）            等同 /exit
-  Ctrl+C（确认框）          等同 n（拒绝）
   Ctrl+D                    等同 /exit
   Y / Enter（确认框）       执行工具
   n / Esc（确认框）         拒绝工具`
@@ -41,7 +60,7 @@ func parseSlashCommand(raw string) (cmd string, args []string) {
 	return cmd, args
 }
 
-// dispatchSlash 处理 P0 斜杠命令，不送 LLM。
+// dispatchSlash 处理斜杠命令，不送 LLM。
 func dispatchSlash(input string) slashResult {
 	raw := strings.TrimSpace(input)
 	if !strings.HasPrefix(raw, "/") {
@@ -65,8 +84,56 @@ func dispatchSlash(input string) slashResult {
 		return slashResult{handled: true, openPage: PagePermissions}
 	case "sessions", "session":
 		return slashResult{handled: true, openPage: PageSessions}
+	case "status":
+		return slashResult{handled: true, message: "__status__"}
+	case "model":
+		if len(args) >= 1 {
+			return slashResult{handled: true, setModel: strings.Join(args, " ")}
+		}
+		return slashResult{handled: true, message: "__model__"}
+	case "clear":
+		return slashResult{handled: true, clearContext: true}
 	case "compact":
 		return slashResult{handled: true, compact: true, compactInstructions: strings.Join(args, " ")}
+	case "context":
+		return slashResult{handled: true, message: "__context__"}
+	case "diff":
+		return slashResult{handled: true, runAgent: "__diff__"}
+	case "sandbox":
+		if len(args) >= 1 {
+			mode := normalizeSandboxMode(args[0])
+			if err := sandboxValidateMode(mode); err != nil {
+				return slashResult{handled: true, message: err.Error()}
+			}
+			return slashResult{handled: true, setSandbox: mode, message: "sandbox 已设为 " + mode}
+		}
+		return slashResult{handled: true, message: "__sandbox_cycle__"}
+	case "review":
+		target := strings.Join(args, " ")
+		return slashResult{handled: true, runReview: true, reviewTarget: target}
+	case "memories", "memory":
+		return slashResult{handled: true, openPage: PageMemories}
+	case "usage", "cost":
+		return slashResult{handled: true, showUsage: true}
+	case "fork":
+		return slashResult{handled: true, fork: true}
+	case "export":
+		return slashResult{handled: true, doExport: true, exportPath: strings.Join(args, " ")}
+	case "rename":
+		if len(args) == 0 {
+			return slashResult{handled: true, message: "用法: /rename <name>"}
+		}
+		return slashResult{handled: true, renameName: strings.Join(args, " ")}
+	case "plan":
+		query := strings.TrimSpace(strings.TrimPrefix(raw, "/plan"))
+		if query == "" {
+			return slashResult{handled: true, message: "用法: /plan <query>"}
+		}
+		return slashResult{handled: true, runPlan: query}
+	case "skills", "skill":
+		return slashResult{handled: true, openPage: PageSkills}
+	case "init":
+		return slashResult{handled: true, runInit: true, initWrite: true}
 	case "exit", "quit":
 		return slashResult{handled: true, quit: true}
 	default:
@@ -90,6 +157,18 @@ func normalizeApprovalMode(raw string) string {
 	}
 }
 
+// normalizeSandboxMode 将用户输入映射为合法 sandbox 模式名。
+func normalizeSandboxMode(raw string) string {
+	switch raw {
+	case "workspace-write", "workspace_write", "workspace":
+		return string(sandbox.ModeWorkspaceWrite)
+	case "danger-full-access", "danger_full_access", "danger":
+		return string(sandbox.ModeDangerFullAccess)
+	default:
+		return raw
+	}
+}
+
 // approvalValidateMode 校验模式名是否合法。
 func approvalValidateMode(mode string) error {
 	for _, m := range approval.Modes {
@@ -98,6 +177,16 @@ func approvalValidateMode(mode string) error {
 		}
 	}
 	return fmt.Errorf("invalid approval mode %q (want: plan | ask-before-edit | ask | edit-automatically)", mode)
+}
+
+// sandboxValidateMode 校验 sandbox 模式名是否合法。
+func sandboxValidateMode(mode string) error {
+	switch sandbox.SandboxMode(mode) {
+	case sandbox.ModeWorkspaceWrite, sandbox.ModeDangerFullAccess:
+		return nil
+	default:
+		return fmt.Errorf("invalid sandbox mode %q (want: workspace-write | danger-full-access)", mode)
+	}
 }
 
 // formatTokens 将 token 计数格式化为状态栏展示字符串。
@@ -118,4 +207,12 @@ func humanTokenCount(n int) string {
 		return fmt.Sprintf("%.1fk", f)
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+// cycleSandboxMode 循环 sandbox 模式。
+func cycleSandboxMode(current string) string {
+	if current == string(sandbox.ModeDangerFullAccess) {
+		return string(sandbox.ModeWorkspaceWrite)
+	}
+	return string(sandbox.ModeDangerFullAccess)
 }

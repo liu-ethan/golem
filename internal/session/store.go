@@ -26,6 +26,7 @@ type Entry struct {
 	ID        string
 	CreatedAt time.Time
 	Summary   string
+	Name      string
 	Preview   string
 }
 
@@ -64,6 +65,10 @@ func Open(projectRoot string) (*Store, error) {
 		projectID: ProjectID(projectRoot),
 	}
 	if err := st.migrate(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := st.migrateP2(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -260,7 +265,7 @@ func (s *Store) ListSessions(limit int) ([]Entry, error) {
 	}
 
 	rows, err := s.db.Query(
-		`SELECT id, created_at, COALESCE(summary, '') FROM sessions
+		`SELECT id, created_at, COALESCE(summary, ''), COALESCE(name, '') FROM sessions
 		 WHERE project_id = ?
 		 ORDER BY created_at DESC
 		 LIMIT ?`,
@@ -276,7 +281,7 @@ func (s *Store) ListSessions(limit int) ([]Entry, error) {
 	for rows.Next() {
 		var e Entry
 		var createdRaw string
-		if err := rows.Scan(&e.ID, &createdRaw, &e.Summary); err != nil {
+		if err := rows.Scan(&e.ID, &createdRaw, &e.Summary, &e.Name); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		e.CreatedAt, err = parseSQLiteTime(createdRaw)
@@ -292,6 +297,10 @@ func (s *Store) ListSessions(limit int) ([]Entry, error) {
 	rows.Close()
 
 	for i, id := range ids {
+		if entries[i].Name != "" {
+			entries[i].Preview = entries[i].Name
+			continue
+		}
 		preview, err := s.firstUserPreview(id)
 		if err != nil {
 			return nil, err
