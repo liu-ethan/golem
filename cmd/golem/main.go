@@ -12,6 +12,7 @@ import (
 	"github.com/tencent-docs/golem/internal/llm"
 	"github.com/tencent-docs/golem/internal/memory"
 	"github.com/tencent-docs/golem/internal/rules"
+	"github.com/tencent-docs/golem/internal/sandbox"
 	"github.com/tencent-docs/golem/internal/session"
 	"github.com/tencent-docs/golem/internal/tui"
 )
@@ -132,6 +133,7 @@ func main() {
 		MemoryCfg:    cfg.Memory,
 		ContextLimit: cfg.Provider.ContextLimit,
 		SummaryStore: store,
+		SandboxMode:  sandbox.ParseMode(cfg.Defaults.Sandbox),
 	})
 	if err != nil {
 		_ = store.Close()

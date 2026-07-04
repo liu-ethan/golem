@@ -17,7 +17,7 @@ func TestListDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, "")
 	out, err := reg.Execute(context.Background(), "list_dir", map[string]any{
 		"path": ".",
 	})
@@ -31,7 +31,7 @@ func TestListDir(t *testing.T) {
 
 func TestListDirRejectsTraversal(t *testing.T) {
 	root := t.TempDir()
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, "")
 
 	_, err := reg.Execute(context.Background(), "list_dir", map[string]any{
 		"path": "../../",
@@ -47,7 +47,7 @@ func TestListDirNotDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, "")
 	_, err := reg.Execute(context.Background(), "list_dir", map[string]any{
 		"path": "file.txt",
 	})

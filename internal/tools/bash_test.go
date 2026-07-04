@@ -4,11 +4,13 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/tencent-docs/golem/internal/sandbox"
 )
 
 func TestBashEcho(t *testing.T) {
 	root := t.TempDir()
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, sandbox.ModeDangerFullAccess)
 
 	out, err := reg.Execute(context.Background(), "bash", map[string]any{
 		"command": "echo hello-golem",
@@ -23,7 +25,7 @@ func TestBashEcho(t *testing.T) {
 
 func TestBashUsesProjectRoot(t *testing.T) {
 	root := t.TempDir()
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, sandbox.ModeDangerFullAccess)
 
 	out, err := reg.Execute(context.Background(), "bash", map[string]any{
 		"command": "pwd",
@@ -38,7 +40,7 @@ func TestBashUsesProjectRoot(t *testing.T) {
 
 func TestBashMissingCommand(t *testing.T) {
 	root := t.TempDir()
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, sandbox.ModeDangerFullAccess)
 
 	_, err := reg.Execute(context.Background(), "bash", map[string]any{})
 	if err == nil {
@@ -48,7 +50,7 @@ func TestBashMissingCommand(t *testing.T) {
 
 func TestBashNonZeroExitStillReturnsOutput(t *testing.T) {
 	root := t.TempDir()
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, sandbox.ModeDangerFullAccess)
 
 	out, err := reg.Execute(context.Background(), "bash", map[string]any{
 		"command": "echo partial && exit 1",
@@ -58,5 +60,26 @@ func TestBashNonZeroExitStillReturnsOutput(t *testing.T) {
 	}
 	if !strings.Contains(out, "partial") {
 		t.Fatalf("bash output = %q, want partial output", out)
+	}
+}
+
+func TestBashWorkspaceWriteViaRegistry(t *testing.T) {
+	root := t.TempDir()
+	reg := NewRegistry(root, sandbox.ModeWorkspaceWrite)
+
+	out, err := reg.Execute(context.Background(), "bash", map[string]any{
+		"command": "echo sandbox-mode",
+	})
+	if err != nil {
+		t.Fatalf("bash: %v", err)
+	}
+	if strings.Contains(out, sandbox.FallbackWarning) {
+		if !strings.Contains(out, "sandbox-mode") {
+			t.Fatalf("fallback output = %q", out)
+		}
+		return
+	}
+	if out != "sandbox-mode" {
+		t.Fatalf("bash output = %q, want sandbox-mode", out)
 	}
 }

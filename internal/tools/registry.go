@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/tencent-docs/golem/internal/llm"
+	"github.com/tencent-docs/golem/internal/sandbox"
 )
 
 // Tool 描述一个内置工具的名称、schema 与执行函数。
@@ -18,16 +19,21 @@ type Tool struct {
 // Registry 持有 project_root 下的全部内置工具，供 Agent 查询 schema 与分发执行。
 type Registry struct {
 	projectRoot string
+	sandboxMode sandbox.SandboxMode
 	tools       map[string]Tool
 }
 
-// NewRegistry 创建绑定 projectRoot 的内置工具注册表。
-func NewRegistry(projectRoot string) *Registry {
+// NewRegistry 创建绑定 projectRoot 的内置工具注册表；mode 为空时默认 workspace-write。
+func NewRegistry(projectRoot string, mode sandbox.SandboxMode) *Registry {
+	if mode == "" {
+		mode = sandbox.ModeWorkspaceWrite
+	}
 	r := &Registry{
 		projectRoot: projectRoot,
+		sandboxMode: mode,
 		tools:       make(map[string]Tool),
 	}
-	r.register(bashTool(projectRoot))
+	r.register(bashTool(projectRoot, mode))
 	r.register(readFileTool(projectRoot))
 	r.register(writeFileTool(projectRoot))
 	r.register(editFileTool(projectRoot))
@@ -70,4 +76,18 @@ func (r *Registry) Execute(ctx context.Context, name string, input map[string]an
 // ProjectRoot 返回注册表绑定的项目根目录。
 func (r *Registry) ProjectRoot() string {
 	return r.projectRoot
+}
+
+// SandboxMode 返回当前 bash 沙箱模式。
+func (r *Registry) SandboxMode() sandbox.SandboxMode {
+	return r.sandboxMode
+}
+
+// SetSandboxMode 运行时切换 bash 沙箱模式（供 /sandbox 与 TUI 状态栏同步）。
+func (r *Registry) SetSandboxMode(mode sandbox.SandboxMode) {
+	if mode == "" {
+		mode = sandbox.ModeWorkspaceWrite
+	}
+	r.sandboxMode = mode
+	r.register(bashTool(r.projectRoot, mode))
 }

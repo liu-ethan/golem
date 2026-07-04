@@ -12,6 +12,7 @@ import (
 	"github.com/tencent-docs/golem/internal/llm/prompts"
 	"github.com/tencent-docs/golem/internal/memory"
 	"github.com/tencent-docs/golem/internal/rules"
+	"github.com/tencent-docs/golem/internal/sandbox"
 	"github.com/tencent-docs/golem/internal/tools"
 )
 
@@ -60,6 +61,7 @@ type Options struct {
 	MemoryCfg    config.MemoryConfig
 	ContextLimit int
 	SummaryStore memory.SummaryStore
+	SandboxMode  sandbox.SandboxMode
 }
 
 // New 创建绑定 projectRoot 的 Agent，冻结项目根并构建基础 system prompt。
@@ -107,7 +109,7 @@ func New(projectRoot string, client llm.LLMClient, opts Options) (*Agent, error)
 		projectRoot:  projectRoot,
 		sessionID:    sessionID,
 		llm:          client,
-		tools:        tools.NewRegistry(projectRoot),
+		tools:        tools.NewRegistry(projectRoot, opts.SandboxMode),
 		policy:       policy,
 		rules:        opts.Rules,
 		gate:         gate,
@@ -232,6 +234,16 @@ func (a *Agent) SetGate(gate ToolGate) {
 // SetConfirm 运行时设置工具确认回调。
 func (a *Agent) SetConfirm(fn ConfirmFunc) {
 	a.confirm = fn
+}
+
+// SandboxMode 返回当前 bash 沙箱模式。
+func (a *Agent) SandboxMode() sandbox.SandboxMode {
+	return a.tools.SandboxMode()
+}
+
+// SetSandboxMode 运行时切换 bash 沙箱模式（供 /sandbox 与 CLI 默认值同步）。
+func (a *Agent) SetSandboxMode(mode sandbox.SandboxMode) {
+	a.tools.SetSandboxMode(mode)
 }
 
 // SetSessionID 切换当前会话 ID，供 TUI /sessions resume 使用。

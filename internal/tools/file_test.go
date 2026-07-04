@@ -7,7 +7,7 @@ import (
 
 func TestRegistryDefinitions(t *testing.T) {
 	root := t.TempDir()
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, "")
 
 	defs := reg.Definitions()
 	if len(defs) != 6 {
@@ -26,7 +26,7 @@ func TestRegistryDefinitions(t *testing.T) {
 
 func TestReadFileRejectsTraversal(t *testing.T) {
 	root := t.TempDir()
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, "")
 
 	_, err := reg.Execute(context.Background(), "read_file", map[string]any{
 		"path": "../../etc/passwd",
@@ -38,7 +38,7 @@ func TestReadFileRejectsTraversal(t *testing.T) {
 
 func TestReadWriteEditFile(t *testing.T) {
 	root := t.TempDir()
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, "")
 	ctx := context.Background()
 
 	_, err := reg.Execute(ctx, "write_file", map[string]any{
@@ -81,7 +81,7 @@ func TestReadWriteEditFile(t *testing.T) {
 
 func TestWriteFileRejectsTraversal(t *testing.T) {
 	root := t.TempDir()
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, "")
 
 	_, err := reg.Execute(context.Background(), "write_file", map[string]any{
 		"path":    "../../outside.txt",
@@ -94,7 +94,7 @@ func TestWriteFileRejectsTraversal(t *testing.T) {
 
 func TestEditFileMissingOldString(t *testing.T) {
 	root := t.TempDir()
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, "")
 	ctx := context.Background()
 
 	if _, err := reg.Execute(ctx, "write_file", map[string]any{

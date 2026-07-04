@@ -17,7 +17,7 @@ func TestGrepFindsMatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, "")
 	out, err := reg.Execute(context.Background(), "grep", map[string]any{
 		"pattern": "RunAgent",
 	})
@@ -42,7 +42,7 @@ func TestGrepSkipsGitDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, "")
 	out, err := reg.Execute(context.Background(), "grep", map[string]any{
 		"pattern": "needle",
 	})
@@ -67,7 +67,7 @@ func TestGrepResultLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, "")
 	out, err := reg.Execute(context.Background(), "grep", map[string]any{
 		"pattern": "match",
 	})
@@ -81,7 +81,7 @@ func TestGrepResultLimit(t *testing.T) {
 
 func TestGrepInvalidPattern(t *testing.T) {
 	root := t.TempDir()
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, "")
 
 	_, err := reg.Execute(context.Background(), "grep", map[string]any{
 		"pattern": "[",
@@ -93,7 +93,7 @@ func TestGrepInvalidPattern(t *testing.T) {
 
 func TestGrepRejectsTraversal(t *testing.T) {
 	root := t.TempDir()
-	reg := NewRegistry(root)
+	reg := NewRegistry(root, "")
 
 	_, err := reg.Execute(context.Background(), "grep", map[string]any{
 		"pattern": "root",
