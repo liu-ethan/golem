@@ -10,6 +10,7 @@ import (
 	"github.com/tencent-docs/golem/internal/approval"
 	"github.com/tencent-docs/golem/internal/config"
 	"github.com/tencent-docs/golem/internal/llm"
+	"github.com/tencent-docs/golem/internal/memory"
 	"github.com/tencent-docs/golem/internal/session"
 	"github.com/tencent-docs/golem/internal/tui"
 )
@@ -101,8 +102,13 @@ func main() {
 	)
 
 	ag, err := agent.New(projectRoot, llmClient, agent.Options{
-		SessionID:    sessionID,
-		Policy:       policy,
+		SessionID: sessionID,
+		Policy:    policy,
+		Memory: agent.BM25MemoryProvider{
+			Store:     store,
+			Retriever: memory.NewBM25Retriever(),
+			TopK:      cfg.Memory.BM25TopK,
+		},
 		OnSession: agent.ChainEndHandler{
 			session.PersistOnEnd{Store: store, Source: ref},
 			agent.MemoryOnEnd{

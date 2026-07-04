@@ -1,5 +1,7 @@
 package agent
 
+import "context"
+
 // EventType 标识 Agent 向 TUI 上报的事件种类。
 type EventType string
 
@@ -37,14 +39,14 @@ type SlashHandler func(cmd string) (handled bool, err error)
 
 // MemoryProvider 在首条用户消息后、首次 StreamChat 前注入 BM25 记忆块；P0 可用 NoopMemoryProvider。
 type MemoryProvider interface {
-	InjectOnce(query string) (string, error)
+	InjectOnce(ctx context.Context, query string) (string, error)
 }
 
 // NoopMemoryProvider 不注入任何记忆，供 P0 在 BM25 模块（Step 11/13）接入前使用。
 type NoopMemoryProvider struct{}
 
 // InjectOnce 返回空字符串，表示无额外记忆可注入。
-func (NoopMemoryProvider) InjectOnce(_ string) (string, error) {
+func (NoopMemoryProvider) InjectOnce(_ context.Context, _ string) (string, error) {
 	return "", nil
 }
 

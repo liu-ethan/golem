@@ -286,8 +286,104 @@ type stubMemory struct {
 	block string
 }
 
-func (s stubMemory) InjectOnce(_ string) (string, error) {
+func (s stubMemory) InjectOnce(_ context.Context, _ string) (string, error) {
 	return s.block, nil
+}
+
+// TestMemoryNotInjectedOnSecondMessage 验证同会话第二条消息不再追加 BM25 记忆块。
+func TestMemoryNotInjectedOnSecondMessage(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	calls := 0
+	mem := countingMemory{
+		block: "\n\n## 相关记忆\n1. fact\n",
+		onCall: func() {
+			calls++
+		},
+	}
+	mock := testutil.NewMockLLM()
+	mock.StreamResponses = []testutil.MockResponse{
+		{Events: textEvents("first")},
+		{Events: textEvents("second")},
+	}
+
+	ag, err := New(root, mock, Options{Memory: mem})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ag.HandleInput(context.Background(), "第一条", nil); err != nil {
+		t.Fatal(err)
+	}
+	promptAfterFirst := ag.SystemPrompt()
+	if _, err := ag.HandleInput(context.Background(), "第二条", nil); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Errorf("InjectOnce calls = %d, want 1", calls)
+	}
+	if ag.SystemPrompt() != promptAfterFirst {
+		t.Error("system prompt should not change on second message")
+	}
+}
+
+// TestBM25MemoryProviderInjectsFromStore 验证首条 user 消息前从 SQLite 检索并注入记忆块。
+func TestBM25MemoryProviderInjectsFromStore(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	st, err := session.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	sessionID := "bm25-inject"
+	if err := st.InsertMemoryFacts(sessionID, []memory.MemoryFact{
+		{Content: "用户偏好 tabs 缩进", Category: "preference"},
+		{Content: "项目使用 Go 与 SQLite", Category: "project_fact"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	mock := testutil.NewMockLLM()
+	mock.StreamResponses = []testutil.MockResponse{{Events: textEvents("ok")}}
+
+	ag, err := New(root, mock, Options{
+		Memory: BM25MemoryProvider{
+			Store:     st,
+			Retriever: memory.NewBM25Retriever(),
+			TopK:      5,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(ag.SystemPrompt(), "相关记忆") {
+		t.Error("BM25 block should not be present before first user message")
+	}
+
+	_, err = ag.HandleInput(context.Background(), "帮我写 Go 代码", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ag.SystemPrompt(), "相关记忆") {
+		t.Errorf("system prompt = %q", ag.SystemPrompt())
+	}
+	if !strings.Contains(ag.SystemPrompt(), "tabs") {
+		t.Error("expected relevant fact in injected block")
+	}
+	if len(mock.StreamCalls) != 1 || !strings.Contains(mock.StreamCalls[0].System, "相关记忆") {
+		t.Errorf("first StreamChat system = %q", mock.StreamCalls[0].System)
+	}
+}
+
+type countingMemory struct {
+	block  string
+	onCall func()
+}
+
+func (c countingMemory) InjectOnce(_ context.Context, _ string) (string, error) {
+	if c.onCall != nil {
+		c.onCall()
+	}
+	return c.block, nil
 }
 
 func makeAgentMessages(n int) []llm.Message {

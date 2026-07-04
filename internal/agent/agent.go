@@ -139,7 +139,7 @@ func (a *Agent) HandleInput(ctx context.Context, input string, handler EventHand
 // handleUserMessage 将用户消息送入主循环，首条消息前注入 BM25 记忆（若尚未注入）。
 func (a *Agent) handleUserMessage(ctx context.Context, text string, handler EventHandler) error {
 	if !a.memoryInjected {
-		block, err := a.memory.InjectOnce(text)
+		block, err := a.memory.InjectOnce(ctx, text)
 		if err != nil {
 			return fmt.Errorf("inject memory: %w", err)
 		}
