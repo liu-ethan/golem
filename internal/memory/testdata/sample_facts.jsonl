@@ -1,0 +1,8 @@
+{"id":"1","content":"用户偏好 Go 语言中显式 error return，不使用 panic","category":"preference"}
+{"id":"2","content":"golem 项目的错误处理遵循 Go 惯例：返回 error 并由调用方处理","category":"project_fact"}
+{"id":"3","content":"internal/api 中的 middleware 统一包装 handler 错误并记录日志","category":"project_fact"}
+{"id":"4","content":"Go 单元测试使用 table-driven 风格，覆盖边界与错误路径","category":"preference"}
+{"id":"5","content":"Python 项目使用 exception 处理错误，与 Go 风格不同","category":"project_fact"}
+{"id":"6","content":"项目使用 SQLite 数据库（modernc.org/sqlite）","category":"project_fact"}
+{"id":"7","content":"用户偏好 tabs 缩进，不接受 gofmt 默认空格","category":"preference"}
+{"id":"8","content":"errors.Is 与 errors.As 用于包装错误链的判断","category":"project_fact"}
