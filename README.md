@@ -289,7 +289,7 @@ TUI：`Shift+Tab` 切 approval；`/permissions` `/sessions` `/status` `/model` `
 golem/
 ├── cmd/golem/              # CLI 入口
 ├── internal/
-│   ├── llm/                # LLMClient 接口与 Streaming 实现
+│   ├── llm/                # LLMClient 接口与 Streaming 实现 + prompts/（prompt 集中管理）
 │   ├── agent/              # Agent 主循环与 tool_use 分发
 │   ├── tools/              # 内置工具集
 │   ├── approval/           # 审批交互模式
@@ -297,6 +297,8 @@ golem/
 │   ├── sandbox/            # Linux Namespace 沙箱
 │   ├── session/            # SQLite 会话持久化（.golem/data/golem.db）
 │   ├── memory/             # 三层记忆系统 + BM25 检索
+│   ├── testutil/           # 跨包共享测试辅助（mock LLMClient / 临时 project_root / golden）
+│   ├── integration/        # 端到端集成测试（agent round-trip / resume / Layer 2 触发）
 │   └── tui/                # Bubble Tea + pages（permissions/sessions；P1 起追加 model/context；P2 起追加 memories/skills）
 │   # P2: internal/skills/
 ├── .github/workflows/      # CI（go test + go vet + go build）
