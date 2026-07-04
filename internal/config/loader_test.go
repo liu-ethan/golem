@@ -139,6 +139,98 @@ func TestExpandString(t *testing.T) {
 	}
 }
 
+func TestLoadConfigStep8Schema(t *testing.T) {
+	root := t.TempDir()
+	projectRoot := filepath.Join(root, "project")
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".golem"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	step8YAML := `
+provider:
+  base_url: "https://api.anthropic.com"
+  api_key: ""
+  model: "claude-sonnet-4-5"
+  context_limit: 200000
+defaults:
+  approval: ask-before-edit
+  sandbox: workspace-write
+memory:
+  layer2_session_threshold: 3
+  bm25_top_k: 5
+  compact_batch_size: 10
+  compact_threshold: 0.8
+`
+	if err := os.WriteFile(filepath.Join(projectRoot, ".golem", "config.yaml"), []byte(step8YAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(projectRoot, Overrides{})
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Provider.BaseURL != "https://api.anthropic.com" {
+		t.Errorf("BaseURL = %q", cfg.Provider.BaseURL)
+	}
+	if cfg.Provider.Model != "claude-sonnet-4-5" {
+		t.Errorf("Model = %q", cfg.Provider.Model)
+	}
+	if cfg.Provider.ContextLimit != 200000 {
+		t.Errorf("ContextLimit = %d, want 200000", cfg.Provider.ContextLimit)
+	}
+	if cfg.Defaults.Approval != "ask-before-edit" {
+		t.Errorf("Approval = %q", cfg.Defaults.Approval)
+	}
+	if cfg.Defaults.Sandbox != "workspace-write" {
+		t.Errorf("Sandbox = %q", cfg.Defaults.Sandbox)
+	}
+	if cfg.Memory.Layer2SessionThreshold != 3 {
+		t.Errorf("Layer2SessionThreshold = %d", cfg.Memory.Layer2SessionThreshold)
+	}
+	if cfg.Memory.BM25TopK != 5 {
+		t.Errorf("BM25TopK = %d", cfg.Memory.BM25TopK)
+	}
+	if cfg.Memory.CompactBatchSize != 10 {
+		t.Errorf("CompactBatchSize = %d", cfg.Memory.CompactBatchSize)
+	}
+	if cfg.Memory.CompactThreshold != 0.8 {
+		t.Errorf("CompactThreshold = %v", cfg.Memory.CompactThreshold)
+	}
+}
+
+func TestLoadConfigDeepSeekProvider(t *testing.T) {
+	root := t.TempDir()
+	projectRoot := filepath.Join(root, "project")
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".golem"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	deepSeekYAML := `
+provider:
+  base_url: "https://api.deepseek.com/anthropic"
+  api_key: "sk-test"
+  model: "deepseek-chat"
+  context_limit: 64000
+`
+	if err := os.WriteFile(filepath.Join(projectRoot, ".golem", "config.yaml"), []byte(deepSeekYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(projectRoot, Overrides{})
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Provider.BaseURL != "https://api.deepseek.com/anthropic" {
+		t.Errorf("BaseURL = %q", cfg.Provider.BaseURL)
+	}
+	if cfg.Provider.Model != "deepseek-chat" {
+		t.Errorf("Model = %q", cfg.Provider.Model)
+	}
+	if cfg.Provider.ContextLimit != 64000 {
+		t.Errorf("ContextLimit = %d", cfg.Provider.ContextLimit)
+	}
+}
+
 func TestDeepMergeMaps(t *testing.T) {
 	base := map[string]any{
 		"provider": map[string]any{

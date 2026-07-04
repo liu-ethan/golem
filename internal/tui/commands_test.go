@@ -59,6 +59,22 @@ func TestDispatchSlashUnknown(t *testing.T) {
 	}
 }
 
+func TestDispatchSlashPlainTextNotHandled(t *testing.T) {
+	for _, input := range []string{"你好", "hello", "read main.go"} {
+		r := dispatchSlash(input)
+		if r.handled {
+			t.Fatalf("input %q should not be handled as slash, got %+v", input, r)
+		}
+	}
+}
+
+func TestDispatchSlashBareSlash(t *testing.T) {
+	r := dispatchSlash("/")
+	if !r.handled || !strings.Contains(r.message, "未知命令") {
+		t.Fatalf("result = %+v", r)
+	}
+}
+
 func TestNormalizeApprovalMode(t *testing.T) {
 	if got := normalizeApprovalMode("auto"); got != approval.ModeEditAutomatically {
 		t.Fatalf("got %q", got)

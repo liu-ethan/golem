@@ -41,6 +41,7 @@ func (r agentRef) Messages() []llm.Message {
 func main() {
 	showVersion := flag.Bool("version", false, "打印版本号后退出")
 	approvalFlag := flag.String("approval", "", "审批模式：plan | ask-before-edit | ask | edit-automatically")
+	sandboxFlag := flag.String("sandbox", "", "沙箱模式：workspace-write | danger-full-access")
 	resumeFlag := flag.String("resume", "", "恢复指定 session id 的历史会话")
 	flag.Parse()
 
@@ -57,6 +58,7 @@ func main() {
 
 	cfg, err := config.LoadConfig(projectRoot, config.Overrides{
 		Approval: *approvalFlag,
+		Sandbox:  *sandboxFlag,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "golem: load config: %v\n", err)

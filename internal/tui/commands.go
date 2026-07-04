@@ -42,7 +42,14 @@ func parseSlashCommand(raw string) (cmd string, args []string) {
 
 // dispatchSlash 处理 P0 斜杠命令，不送 LLM。
 func dispatchSlash(input string) slashResult {
+	raw := strings.TrimSpace(input)
+	if !strings.HasPrefix(raw, "/") {
+		return slashResult{handled: false}
+	}
 	cmd, args := parseSlashCommand(input)
+	if cmd == "" {
+		return slashResult{handled: true, message: "未知命令: /（输入 /help 查看）"}
+	}
 	switch cmd {
 	case "help", "h", "?":
 		return slashResult{handled: true, message: helpText}
