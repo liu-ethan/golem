@@ -460,6 +460,22 @@ func (s *Store) IncrementSessionCount() (int, error) {
 	return count, nil
 }
 
+// SessionCount 返回当前项目的 profile_jobs.session_count，无记录时返回 0。
+func (s *Store) SessionCount() (int, error) {
+	var count int
+	err := s.db.QueryRow(
+		`SELECT session_count FROM profile_jobs WHERE project_id = ?`,
+		s.projectID,
+	).Scan(&count)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read session count: %w", err)
+	}
+	return count, nil
+}
+
 // ResetSessionCount 将 profile_jobs.session_count 归零，Layer 2 合并完成后调用。
 func (s *Store) ResetSessionCount() error {
 	_, err := s.db.Exec(

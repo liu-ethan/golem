@@ -39,7 +39,18 @@ func (s *stubFactStore) IncrementSessionCount() (int, error) {
 	return s.count, nil
 }
 
-func (s *stubFactStore) DeleteAllFacts() error    { return nil }
+func (s *stubFactStore) ListMemoryFacts() ([]MemoryFact, error) {
+	return append([]MemoryFact(nil), s.facts...), nil
+}
+
+func (s *stubFactStore) SessionCount() (int, error) {
+	return s.count, nil
+}
+
+func (s *stubFactStore) DeleteAllFacts() error {
+	s.facts = nil
+	return nil
+}
 func (s *stubFactStore) ResetSessionCount() error { s.count = 0; return nil }
 
 func TestParseExtractedFactsValidJSON(t *testing.T) {
@@ -179,13 +190,20 @@ func TestOnSessionEndSkipsWithoutMessages(t *testing.T) {
 }
 
 func TestOnSessionEndTriggersLayer2AtThreshold(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
 	mock := testutil.NewMockLLM()
-	mock.CompleteText = "[]"
-	store := &stubFactStore{projectID: "proj-1", count: 2}
+	store := &stubFactStore{
+		projectID: "proj-1",
+		count:     2,
+	}
+	layer1Payload, _ := json.Marshal([]extractedFact{
+		{Content: "用户偏好 tabs", Category: "preference"},
+	})
+	mock.CompleteText = string(layer1Payload)
 
 	err := OnSessionEnd(context.Background(), SessionEndParams{
 		SessionID:   "sess-3",
-		ProjectRoot: "/tmp/proj",
+		ProjectRoot: root,
 		Messages: []llm.Message{{
 			Role: llm.RoleUser,
 			Content: []llm.ContentBlock{{
@@ -200,7 +218,13 @@ func TestOnSessionEndTriggersLayer2AtThreshold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if store.count != 3 {
-		t.Errorf("count = %d, want 3", store.count)
+	if store.count != 0 {
+		t.Errorf("count after layer2 = %d, want 0", store.count)
+	}
+	if len(store.facts) != 0 {
+		t.Fatalf("facts after layer2 = %d, want 0", len(store.facts))
+	}
+	if len(mock.CompleteCalls) != 2 {
+		t.Fatalf("Complete calls = %d, want 2 (layer1 + layer2)", len(mock.CompleteCalls))
 	}
 }

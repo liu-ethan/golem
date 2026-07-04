@@ -460,3 +460,46 @@ func TestDeleteAllFactsAndResetSessionCount(t *testing.T) {
 		t.Errorf("count after reset = %d, want 1", count)
 	}
 }
+
+func TestRunLayer2WithStore(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	st, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	sessionID := uuid.NewString()
+	if err := st.InsertMemoryFacts(sessionID, []memory.MemoryFact{
+		{Content: "用户偏好 tabs 缩进", Category: "preference"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, err := st.IncrementSessionCount(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mock := testutil.NewMockLLM()
+	mock.CompleteText = "# 用户画像（2026-07-04 更新，基于 3 次会话）\n\n## 技术偏好\n- tabs"
+
+	if err := memory.RunLayer2(context.Background(), st.ProjectIDValue(), root, st, mock); err != nil {
+		t.Fatal(err)
+	}
+
+	facts, err := st.ListMemoryFacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts) != 0 {
+		t.Fatalf("facts = %d, want 0", len(facts))
+	}
+	count, err := st.SessionCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Errorf("session count = %d, want 0", count)
+	}
+}
