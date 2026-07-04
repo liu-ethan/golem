@@ -1,4 +1,22 @@
+# IDE
 .cursor/
+
+# 私人开发文档与本地 agent 说明（不上传远端）
 docs/
 AGENTS.md
+
+# .golem 运行时数据（rules.yaml 示例可提交，其余忽略）
 .golem/config.yaml
+.golem/user_profile.md
+.golem/data/
+
+# 构建产物
+/golem
+/golem.exe
+
+# Go 覆盖率
+coverage.out
+
+# OS
+.DS_Store
+Thumbs.db
