@@ -1,0 +1,13 @@
+rules:
+  - action: allow
+    pattern: "go *"
+  - action: allow
+    pattern: "git *"
+  - action: ask
+    pattern: "curl *"
+  - action: deny
+    pattern: "rm -rf *"
+  - action: deny
+    pattern: "wget *"
+
+priority: deny > ask > allow
