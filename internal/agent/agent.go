@@ -212,6 +212,13 @@ func (a *Agent) SetConfirm(fn ConfirmFunc) {
 	a.confirm = fn
 }
 
+// SetSessionID 切换当前会话 ID，供 TUI /sessions resume 使用。
+func (a *Agent) SetSessionID(id string) {
+	if id != "" {
+		a.sessionID = id
+	}
+}
+
 // RestoreState 从持久化还原消息历史；resume 后 memoryInjected 应为 false，由调用方设置。
 func (a *Agent) RestoreState(messages []llm.Message, memoryInjected bool, summary string) {
 	a.messages = messages
