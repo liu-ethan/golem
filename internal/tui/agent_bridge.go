@@ -7,6 +7,7 @@ import (
 
 	"github.com/tencent-docs/golem/internal/agent"
 	"github.com/tencent-docs/golem/internal/llm"
+	"github.com/tencent-docs/golem/internal/memory"
 	"github.com/tencent-docs/golem/internal/session"
 )
 
@@ -37,6 +38,12 @@ type sessionResumeDataMsg struct {
 	summary   string
 	messages  []llm.Message
 	err       error
+}
+
+// compactDoneMsg 表示 /compact 手动压缩完成。
+type compactDoneMsg struct {
+	message string
+	err     error
 }
 
 // startAgentRun 在 goroutine 中执行 Agent.HandleInput，通过 program.Send 推送事件。
@@ -185,7 +192,7 @@ func rebuildChatFromMessages(msgs []llm.Message) []ChatLine {
 			for _, block := range msg.Content {
 				switch block.Type {
 				case "text":
-					if strings.HasPrefix(block.Text, "[Previous conversation summary]") {
+					if strings.HasPrefix(block.Text, memory.SummaryMessagePrefix) {
 						lines = append(lines, ChatLine{
 							Kind: LineSystem,
 							Text: block.Text,

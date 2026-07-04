@@ -101,10 +101,13 @@ func main() {
 	)
 
 	ag, err := agent.New(projectRoot, llmClient, agent.Options{
-		SessionID:   sessionID,
-		Policy:      policy,
-		OnSession:   session.PersistOnEnd{Store: store, Source: ref},
-		InitialMsgs: resumeMsgs,
+		SessionID:    sessionID,
+		Policy:       policy,
+		OnSession:    session.PersistOnEnd{Store: store, Source: ref},
+		InitialMsgs:  resumeMsgs,
+		MemoryCfg:    cfg.Memory,
+		ContextLimit: cfg.Provider.ContextLimit,
+		SummaryStore: store,
 	})
 	if err != nil {
 		_ = store.Close()

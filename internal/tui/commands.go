@@ -12,6 +12,7 @@ const helpText = `P0 斜杠命令：
   /permissions              权限页：切换 approval + 查看 rules
   /permissions <mode>       直接设定 plan | ask-before-edit | ask | edit-automatically
   /sessions                 最近会话列表，Enter 恢复
+  /compact [instructions]   手动触发 Layer 0 上下文压缩
   /exit                     结束会话并退出
 
 快捷键：
@@ -23,7 +24,7 @@ const helpText = `P0 斜杠命令：
   Y / Enter（确认框）       执行工具
   n / Esc（确认框）         拒绝工具`
 
-// parseSlashCommand 解析斜杠命令字符串，返回命令名与小写参数列表。
+// parseSlashCommand 解析斜杠命令字符串，返回命令名与原始参数列表。
 func parseSlashCommand(raw string) (cmd string, args []string) {
 	raw = strings.TrimSpace(raw)
 	if !strings.HasPrefix(raw, "/") {
@@ -35,7 +36,7 @@ func parseSlashCommand(raw string) (cmd string, args []string) {
 	}
 	cmd = strings.ToLower(strings.TrimPrefix(fields[0], "/"))
 	for _, a := range fields[1:] {
-		args = append(args, strings.ToLower(a))
+		args = append(args, a)
 	}
 	return cmd, args
 }
@@ -64,6 +65,8 @@ func dispatchSlash(input string) slashResult {
 		return slashResult{handled: true, openPage: PagePermissions}
 	case "sessions", "session":
 		return slashResult{handled: true, openPage: PageSessions}
+	case "compact":
+		return slashResult{handled: true, compact: true, compactInstructions: strings.Join(args, " ")}
 	case "exit", "quit":
 		return slashResult{handled: true, quit: true}
 	default:

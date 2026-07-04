@@ -7,8 +7,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tencent-docs/golem/internal/approval"
+	"github.com/tencent-docs/golem/internal/config"
 	"github.com/tencent-docs/golem/internal/llm"
 	"github.com/tencent-docs/golem/internal/llm/prompts"
+	"github.com/tencent-docs/golem/internal/memory"
 	"github.com/tencent-docs/golem/internal/tools"
 )
 
@@ -32,6 +34,10 @@ type Agent struct {
 
 	maxTokens int
 
+	memoryCfg    config.MemoryConfig
+	contextLimit int
+	summaryStore memory.SummaryStore
+
 	sessionInputTokens  int
 	sessionOutputTokens int
 	hadUserMessages     bool
@@ -47,7 +53,10 @@ type Options struct {
 	Slash       SlashHandler
 	Memory      MemoryProvider
 	OnSession   SessionEndHandler
-	InitialMsgs []llm.Message
+	InitialMsgs  []llm.Message
+	MemoryCfg    config.MemoryConfig
+	ContextLimit int
+	SummaryStore memory.SummaryStore
 }
 
 // New 创建绑定 projectRoot 的 Agent，冻结项目根并构建基础 system prompt。
@@ -102,6 +111,9 @@ func New(projectRoot string, client llm.LLMClient, opts Options) (*Agent, error)
 		systemPrompt: systemPrompt,
 		messages:     msgs,
 		maxTokens:    opts.MaxTokens,
+		memoryCfg:    opts.MemoryCfg,
+		contextLimit: opts.ContextLimit,
+		summaryStore: opts.SummaryStore,
 	}, nil
 }
 
@@ -223,13 +235,29 @@ func (a *Agent) SetSessionID(id string) {
 func (a *Agent) RestoreState(messages []llm.Message, memoryInjected bool, summary string) {
 	a.messages = messages
 	a.memoryInjected = memoryInjected
-	if summary != "" {
-		a.messages = append([]llm.Message{{
-			Role: llm.RoleUser,
-			Content: []llm.ContentBlock{{
-				Type: "text",
-				Text: "[Previous conversation summary]\n" + summary,
-			}},
-		}}, a.messages...)
+	if summary != "" && (len(a.messages) == 0 || !memory.IsSummaryMessage(a.messages[0])) {
+		a.messages = append([]llm.Message{memory.SummaryMessage(summary)}, a.messages...)
 	}
+}
+
+// Compact 手动触发 Layer 0 压缩（/compact）；instructions 追加到摘要 prompt。
+func (a *Agent) Compact(ctx context.Context, instructions string) (string, error) {
+	result, err := a.runCompact(ctx, true, instructions)
+	if err != nil {
+		return "", err
+	}
+	if !result.Compacted {
+		batch := a.memoryCfg.CompactBatchSize
+		if batch <= 0 {
+			batch = 10
+		}
+		return fmt.Sprintf("未压缩：消息数不足（需 > %d 条非 system 消息）或 LLM 未配置", batch), nil
+	}
+	return fmt.Sprintf("已压缩最旧 %d 条消息为摘要", compactBatchSize(a.memoryCfg)), nil
+}
+
+// AddTokenUsage 累加 LLM 调用的 token 用量，供 TokenUsageHook 与 Layer 0 压缩后更新。
+func (a *Agent) AddTokenUsage(u llm.Usage) {
+	a.sessionInputTokens += u.InputTokens
+	a.sessionOutputTokens += u.OutputTokens
 }

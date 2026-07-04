@@ -194,6 +194,10 @@ func (a *Agent) dispatchTool(ctx context.Context, name string, input map[string]
 // runAgentLoop 在用户消息已追加后，循环 StreamChat → 执行 tool_use 直至无工具调用。
 func (a *Agent) runAgentLoop(ctx context.Context, handler EventHandler) error {
 	for {
+		if err := a.runCompactBeforeTurn(ctx, handler); err != nil {
+			return err
+		}
+
 		turn, err := a.runStreamTurn(ctx, handler)
 		if err != nil {
 			if handler != nil {

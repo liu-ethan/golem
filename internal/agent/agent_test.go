@@ -9,7 +9,10 @@ import (
 	"testing"
 
 	"github.com/tencent-docs/golem/internal/approval"
+	"github.com/tencent-docs/golem/internal/config"
 	"github.com/tencent-docs/golem/internal/llm"
+	"github.com/tencent-docs/golem/internal/memory"
+	"github.com/tencent-docs/golem/internal/session"
 	"github.com/tencent-docs/golem/internal/testutil"
 )
 
@@ -285,4 +288,87 @@ type stubMemory struct {
 
 func (s stubMemory) InjectOnce(_ string) (string, error) {
 	return s.block, nil
+}
+
+func makeAgentMessages(n int) []llm.Message {
+	msgs := make([]llm.Message, n)
+	for i := range msgs {
+		role := llm.RoleUser
+		if i%2 == 1 {
+			role = llm.RoleAssistant
+		}
+		msgs[i] = llm.Message{
+			Role: role,
+			Content: []llm.ContentBlock{{
+				Type: "text",
+				Text: strings.Repeat("m", i+1),
+			}},
+		}
+	}
+	return msgs
+}
+
+// TestAgentCompactManual 验证 /compact 路径压缩最旧一批消息并写入 summary store。
+func TestAgentCompactManual(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	st, err := session.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	mock := testutil.NewMockLLM()
+	mock.CompleteText = "压缩摘要内容"
+	policy, err := approval.New(approval.ModeEditAutomatically)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID := "compact-test"
+	ag, err := New(root, mock, Options{
+		SessionID: sessionID,
+		Policy:    policy,
+		MemoryCfg: config.MemoryConfig{CompactBatchSize: 10, CompactThreshold: 0.8},
+		ContextLimit: 100,
+		SummaryStore: st,
+		InitialMsgs:  makeAgentMessages(15),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msg, err := ag.Compact(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg, "已压缩") {
+		t.Errorf("compact message = %q", msg)
+	}
+	if len(ag.Messages()) != 6 {
+		t.Fatalf("messages = %d, want 6", len(ag.Messages()))
+	}
+	if !memory.IsSummaryMessage(ag.Messages()[0]) {
+		t.Error("expected summary message at front")
+	}
+	summary, _, err := st.LoadSession(sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary != "压缩摘要内容" {
+		t.Errorf("summary = %q", summary)
+	}
+}
+
+// TestRestoreStateSkipsDuplicateSummary 验证 resume 时不在已有 summary 消息前重复注入。
+func TestRestoreStateSkipsDuplicateSummary(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	mock := testutil.NewMockLLM()
+	ag, err := New(root, mock, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	withSummary := []llm.Message{memory.SummaryMessage("已有摘要")}
+	ag.RestoreState(withSummary, false, "已有摘要")
+	if len(ag.Messages()) != 1 {
+		t.Fatalf("messages = %d, want 1 without duplicate", len(ag.Messages()))
+	}
 }

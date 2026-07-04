@@ -81,6 +81,13 @@ func TestNormalizeApprovalMode(t *testing.T) {
 	}
 }
 
+func TestDispatchSlashCompact(t *testing.T) {
+	r := dispatchSlash("/compact keep file paths")
+	if !r.handled || !r.compact || r.compactInstructions != "keep file paths" {
+		t.Fatalf("result = %+v", r)
+	}
+}
+
 func TestFormatTokens(t *testing.T) {
 	if got := formatTokens(12400, 200000); got != "12.4k / 200k" {
 		t.Fatalf("got %q", got)

@@ -157,6 +157,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 		m.activePage = PageChat
 		return m, nil
+
+	case compactDoneMsg:
+		m.syncStatus()
+		if msg.err != nil {
+			m.errMsg = msg.err.Error()
+			m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: "Compact 失败: " + msg.err.Error()})
+			return m, nil
+		}
+		m.lines = rebuildChatFromMessages(m.agent.Messages())
+		m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: msg.message})
+		_ = syncMessages(m.store, m.agent)
+		return m, nil
 	}
 	return m, nil
 }
@@ -323,6 +335,9 @@ func (m Model) applySlash(r slashResult) (Model, tea.Cmd) {
 	if r.openPage == PageSessions {
 		return m, m.openSessionsPage()
 	}
+	if r.compact {
+		return m, m.runCompact(r.compactInstructions)
+	}
 	if r.message != "" {
 		m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: r.message})
 	}
@@ -402,6 +417,14 @@ func syncMessages(store *session.Store, ag *agent.Agent) error {
 		return nil
 	}
 	return session.SyncFromSource(store, ag)
+}
+
+func (m *Model) runCompact(instructions string) tea.Cmd {
+	ag := m.agent
+	return func() tea.Msg {
+		msg, err := ag.Compact(context.Background(), instructions)
+		return compactDoneMsg{message: msg, err: err}
+	}
 }
 
 // sessionPageEntries 将会话 Store 条目转为 pages 包视图结构。

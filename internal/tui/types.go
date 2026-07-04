@@ -82,6 +82,8 @@ type slashResult struct {
 	message  string
 	openPage PageKind
 	setMode  string
+	compact  bool
+	compactInstructions string
 }
 
 // approvalModeIndex 返回 mode 在 approval.Modes 中的索引，未知模式返回 0。
