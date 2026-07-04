@@ -20,9 +20,11 @@ type MockLLM struct {
 	StreamResponses []MockResponse
 	StreamIndex     int
 
-	CompleteText  string
-	CompleteUsage llm.Usage
-	CompleteErr   error
+	CompleteText      string
+	CompleteResponses []string
+	CompleteIndex     int
+	CompleteUsage     llm.Usage
+	CompleteErr       error
 
 	StreamCalls   []llm.ChatRequest
 	CompleteCalls []llm.CompleteRequest
@@ -76,7 +78,12 @@ func (m *MockLLM) Complete(ctx context.Context, req llm.CompleteRequest) (string
 	if m.CompleteErr != nil {
 		return "", llm.Usage{}, m.CompleteErr
 	}
-	return m.CompleteText, m.CompleteUsage, nil
+	text := m.CompleteText
+	if m.CompleteIndex < len(m.CompleteResponses) {
+		text = m.CompleteResponses[m.CompleteIndex]
+		m.CompleteIndex++
+	}
+	return text, m.CompleteUsage, nil
 }
 
 // Reset 清空调用记录与流式响应游标，保留预设响应队列。
@@ -84,6 +91,7 @@ func (m *MockLLM) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.StreamIndex = 0
+	m.CompleteIndex = 0
 	m.StreamCalls = nil
 	m.CompleteCalls = nil
 }
