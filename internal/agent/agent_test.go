@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tencent-docs/golem/internal/approval"
 	"github.com/tencent-docs/golem/internal/llm"
 	"github.com/tencent-docs/golem/internal/testutil"
 )
@@ -45,7 +46,11 @@ func TestAgentToolChainReadEditVerify(t *testing.T) {
 		{Events: textEvents("已读取并修改 hello.txt，内容为 hello golem。")},
 	}
 
-	ag, err := New(root, mock, Options{Gate: AllowAllGate{}})
+	policy, err := approval.New(approval.ModeEditAutomatically)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ag, err := New(root, mock, Options{Policy: policy})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +129,7 @@ func TestMemoryInjectedBeforeFirstStreamChat(t *testing.T) {
 	}
 }
 
-// TestPlanModeDeniesWrite 验证 plan 模式（DenyWriteGate）直接拒绝写操作，不执行工具。
+// TestPlanModeDeniesWrite 验证 plan 模式直接拒绝写操作，不执行工具、不弹确认框。
 func TestPlanModeDeniesWrite(t *testing.T) {
 	root := testutil.TempProjectRoot(t)
 	mock := testutil.NewMockLLM()
@@ -133,7 +138,18 @@ func TestPlanModeDeniesWrite(t *testing.T) {
 		{Events: textEvents("写操作在 plan 模式下被拒绝。")},
 	}
 
-	ag, err := New(root, mock, Options{Gate: DenyWriteGate{}})
+	planPolicy, err := approval.New(approval.ModePlan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmCalled := false
+	ag, err := New(root, mock, Options{
+		Policy: planPolicy,
+		Confirm: func(_ string, _ map[string]any) (bool, error) {
+			confirmCalled = true
+			return true, nil
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,8 +169,48 @@ func TestPlanModeDeniesWrite(t *testing.T) {
 	if !toolErr {
 		t.Error("expected denied tool result")
 	}
+	if confirmCalled {
+		t.Error("plan mode should deny without confirmation dialog")
+	}
 	if _, err := os.Stat(filepath.Join(root, "x.txt")); !os.IsNotExist(err) {
 		t.Error("write_file should not have created file under plan mode")
+	}
+}
+
+// TestAskBeforeEditRequiresConfirm 验证 ask-before-edit 模式下写操作需用户确认。
+func TestAskBeforeEditRequiresConfirm(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	mock := testutil.NewMockLLM()
+	mock.StreamResponses = []testutil.MockResponse{
+		{Events: toolUseEvents("tu_write", "write_file", `{"path":"ok.txt","content":"yes"}`)},
+		{Events: textEvents("已写入。")},
+	}
+
+	abPolicy, err := approval.New(approval.ModeAskBeforeEdit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmCalled := false
+	ag, err := New(root, mock, Options{
+		Policy: abPolicy,
+		Confirm: func(_ string, _ map[string]any) (bool, error) {
+			confirmCalled = true
+			return true, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ag.HandleInput(context.Background(), "写个文件", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !confirmCalled {
+		t.Error("ask-before-edit should invoke confirm for write_file")
+	}
+	if _, err := os.Stat(filepath.Join(root, "ok.txt")); err != nil {
+		t.Errorf("write_file should succeed after confirm: %v", err)
 	}
 }
 
@@ -167,8 +223,12 @@ func TestUserDeniedToolExecution(t *testing.T) {
 		{Events: textEvents("明白，未写入文件。")},
 	}
 
+	askPolicy, err := approval.New(approval.ModeAsk)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ag, err := New(root, mock, Options{
-		Gate: ConfirmAllGate{},
+		Policy: askPolicy,
 		Confirm: func(_ string, _ map[string]any) (bool, error) {
 			return false, nil
 		},

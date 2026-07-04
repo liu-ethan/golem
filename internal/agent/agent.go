@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/tencent-docs/golem/internal/approval"
 	"github.com/tencent-docs/golem/internal/llm"
 	"github.com/tencent-docs/golem/internal/llm/prompts"
 	"github.com/tencent-docs/golem/internal/tools"
@@ -18,6 +19,7 @@ type Agent struct {
 
 	llm       llm.LLMClient
 	tools     *tools.Registry
+	policy    approval.ApprovalPolicy
 	gate      ToolGate
 	confirm   ConfirmFunc
 	onSlash   SlashHandler
@@ -39,6 +41,7 @@ type Agent struct {
 type Options struct {
 	SessionID   string
 	MaxTokens   int
+	Policy      approval.ApprovalPolicy
 	Gate        ToolGate
 	Confirm     ConfirmFunc
 	Slash       SlashHandler
@@ -60,9 +63,17 @@ func New(projectRoot string, client llm.LLMClient, opts Options) (*Agent, error)
 	if sessionID == "" {
 		sessionID = uuid.NewString()
 	}
+	policy := opts.Policy
+	if policy == nil && opts.Gate == nil {
+		var err error
+		policy, err = approval.New(approval.ModeAskBeforeEdit)
+		if err != nil {
+			return nil, err
+		}
+	}
 	gate := opts.Gate
 	if gate == nil {
-		gate = AllowAllGate{}
+		gate = GateFromPolicy(policy)
 	}
 	memory := opts.Memory
 	if memory == nil {
@@ -82,6 +93,7 @@ func New(projectRoot string, client llm.LLMClient, opts Options) (*Agent, error)
 		sessionID:    sessionID,
 		llm:          client,
 		tools:        tools.NewRegistry(projectRoot),
+		policy:       policy,
 		gate:         gate,
 		confirm:      opts.Confirm,
 		onSlash:      opts.Slash,
@@ -174,10 +186,23 @@ func (a *Agent) SessionInputTokens() int {
 	return a.sessionInputTokens
 }
 
-// SetGate 运行时更换审批门控（供 TUI /permissions 与 Shift+Tab 在 Step 5/7 接入）。
+// ApprovalPolicy 返回当前审批策略；未配置 Policy 时返回 nil。
+func (a *Agent) ApprovalPolicy() approval.ApprovalPolicy {
+	return a.policy
+}
+
+// SetApprovalPolicy 运行时更换审批策略并同步 ToolGate（供 /permissions 与 Shift+Tab）。
+func (a *Agent) SetApprovalPolicy(policy approval.ApprovalPolicy) {
+	a.policy = policy
+	if policy != nil {
+		a.gate = GateFromPolicy(policy)
+	}
+}
+
+// SetGate 运行时更换审批门控；直接设置 gate 时不更新 policy 指针。
 func (a *Agent) SetGate(gate ToolGate) {
 	if gate == nil {
-		gate = AllowAllGate{}
+		gate = GateFromPolicy(mustPolicy(approval.ModeEditAutomatically))
 	}
 	a.gate = gate
 }
