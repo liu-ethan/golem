@@ -11,6 +11,7 @@ import (
 	"github.com/tencent-docs/golem/internal/config"
 	"github.com/tencent-docs/golem/internal/llm"
 	"github.com/tencent-docs/golem/internal/memory"
+	"github.com/tencent-docs/golem/internal/rules"
 	"github.com/tencent-docs/golem/internal/session"
 	"github.com/tencent-docs/golem/internal/tui"
 )
@@ -101,9 +102,17 @@ func main() {
 		llm.WithSessionID(sessionID),
 	)
 
+	loadedRules, err := rules.Load(projectRoot)
+	if err != nil {
+		_ = store.Close()
+		fmt.Fprintf(os.Stderr, "golem: load rules: %v\n", err)
+		os.Exit(1)
+	}
+
 	ag, err := agent.New(projectRoot, llmClient, agent.Options{
 		SessionID: sessionID,
 		Policy:    policy,
+		Rules:     loadedRules,
 		Memory: agent.BM25MemoryProvider{
 			Store:     store,
 			Retriever: memory.NewBM25Retriever(),
@@ -138,7 +147,7 @@ func main() {
 	rulesLines, err := tui.LoadRulesDisplay(projectRoot)
 	if err != nil {
 		_ = store.Close()
-		fmt.Fprintf(os.Stderr, "golem: load rules: %v\n", err)
+		fmt.Fprintf(os.Stderr, "golem: format rules: %v\n", err)
 		os.Exit(1)
 	}
 

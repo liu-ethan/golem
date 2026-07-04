@@ -12,6 +12,7 @@ import (
 	"github.com/tencent-docs/golem/internal/config"
 	"github.com/tencent-docs/golem/internal/llm"
 	"github.com/tencent-docs/golem/internal/memory"
+	"github.com/tencent-docs/golem/internal/rules"
 	"github.com/tencent-docs/golem/internal/session"
 	"github.com/tencent-docs/golem/internal/testutil"
 )
@@ -281,6 +282,89 @@ func TestBuildBaseSystemPromptIncludesProfile(t *testing.T) {
 		t.Error("BM25 block should not be present at init")
 	}
 }
+
+// TestRulesDenyBashCommand 验证 rules.deny 直接拒绝 bash，不执行、不弹确认框。
+func TestRulesDenyBashCommand(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	mock := testutil.NewMockLLM()
+	mock.StreamResponses = []testutil.MockResponse{
+		{Events: toolUseEvents("tu_bash", "bash", `{"command":"rm -rf /tmp/x"}`)},
+		{Events: textEvents("命令被拒绝。")},
+	}
+
+	autoPolicy, err := approval.New(approval.ModeEditAutomatically)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmCalled := false
+	ag, err := New(root, mock, Options{
+		Policy: autoPolicy,
+		Rules: []rules.Rule{
+			{Action: "deny", Pattern: "rm -rf *"},
+		},
+		Confirm: func(_ string, _ map[string]any) (bool, error) {
+			confirmCalled = true
+			return true, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var toolOutput string
+	_, err = ag.HandleInput(context.Background(), "删除临时目录", func(evt Event) {
+		if evt.Type == EventToolComplete && evt.ToolName == "bash" {
+			toolOutput = evt.ToolOutput
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(toolOutput, "permission rule") {
+		t.Errorf("tool output = %q", toolOutput)
+	}
+	if confirmCalled {
+		t.Error("rules deny should not invoke confirm")
+	}
+}
+
+// TestRulesAskRequiresConfirmInEditAutomatically 验证 edit-automatically 下 rules.ask 仍弹确认。
+func TestRulesAskRequiresConfirmInEditAutomatically(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	mock := testutil.NewMockLLM()
+	mock.StreamResponses = []testutil.MockResponse{
+		{Events: toolUseEvents("tu_bash", "bash", `{"command":"echo ok"}`)},
+		{Events: textEvents("已执行。")},
+	}
+
+	autoPolicy, err := approval.New(approval.ModeEditAutomatically)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmCalled := false
+	ag, err := New(root, mock, Options{
+		Policy: autoPolicy,
+		Rules: []rules.Rule{
+			{Action: "ask", Pattern: "echo *"},
+		},
+		Confirm: func(_ string, _ map[string]any) (bool, error) {
+			confirmCalled = true
+			return true, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ag.HandleInput(context.Background(), "跑 echo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !confirmCalled {
+		t.Error("rules ask should invoke confirm under edit-automatically")
+	}
+}
+
 
 type stubMemory struct {
 	block string

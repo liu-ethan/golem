@@ -11,6 +11,7 @@ import (
 	"github.com/tencent-docs/golem/internal/llm"
 	"github.com/tencent-docs/golem/internal/llm/prompts"
 	"github.com/tencent-docs/golem/internal/memory"
+	"github.com/tencent-docs/golem/internal/rules"
 	"github.com/tencent-docs/golem/internal/tools"
 )
 
@@ -22,6 +23,7 @@ type Agent struct {
 	llm       llm.LLMClient
 	tools     *tools.Registry
 	policy    approval.ApprovalPolicy
+	rules     []rules.Rule
 	gate      ToolGate
 	confirm   ConfirmFunc
 	onSlash   SlashHandler
@@ -48,6 +50,7 @@ type Options struct {
 	SessionID   string
 	MaxTokens   int
 	Policy      approval.ApprovalPolicy
+	Rules       []rules.Rule
 	Gate        ToolGate
 	Confirm     ConfirmFunc
 	Slash       SlashHandler
@@ -84,6 +87,9 @@ func New(projectRoot string, client llm.LLMClient, opts Options) (*Agent, error)
 	if gate == nil {
 		gate = GateFromPolicy(policy)
 	}
+	if len(opts.Rules) > 0 {
+		gate = GateWithRules(opts.Rules, gate)
+	}
 	memory := opts.Memory
 	if memory == nil {
 		memory = NoopMemoryProvider{}
@@ -103,6 +109,7 @@ func New(projectRoot string, client llm.LLMClient, opts Options) (*Agent, error)
 		llm:          client,
 		tools:        tools.NewRegistry(projectRoot),
 		policy:       policy,
+		rules:        opts.Rules,
 		gate:         gate,
 		confirm:      opts.Confirm,
 		onSlash:      opts.Slash,
@@ -208,6 +215,9 @@ func (a *Agent) SetApprovalPolicy(policy approval.ApprovalPolicy) {
 	a.policy = policy
 	if policy != nil {
 		a.gate = GateFromPolicy(policy)
+		if len(a.rules) > 0 {
+			a.gate = GateWithRules(a.rules, a.gate)
+		}
 	}
 }
 

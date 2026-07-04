@@ -170,7 +170,11 @@ func (a *Agent) executeToolCalls(ctx context.Context, toolUses []llm.ContentBloc
 // dispatchTool 经审批门控后执行单个工具，返回结果文本与是否为错误结果。
 func (a *Agent) dispatchTool(ctx context.Context, name string, input map[string]any) (result string, isErr bool, err error) {
 	if a.gate.IsDenied(name, input) {
-		return fmt.Sprintf("Error: denied by approval policy (tool=%s)", name), true, nil
+		msg := fmt.Sprintf("Error: denied by approval policy (tool=%s)", name)
+		if rd, ok := a.gate.(RuleDenier); ok && rd.DeniedByRule(name, input) {
+			msg = fmt.Sprintf("Error: denied by permission rule (tool=%s)", name)
+		}
+		return msg, true, nil
 	}
 	if a.gate.ShouldConfirm(name, input) {
 		if a.confirm == nil {
