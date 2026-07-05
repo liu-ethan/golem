@@ -20,6 +20,9 @@ func renderView(m Model) string {
 	if m.activePage == PageWelcome {
 		return renderWelcomePanel(m, width, m.height)
 	}
+	if m.activePage == PageSetup {
+		return renderSetupPanel(m, width, m.height)
+	}
 
 	var body strings.Builder
 	body.WriteString(renderStatusBar(m.status))
@@ -118,6 +121,8 @@ func renderFooter(m Model, slashActive bool) string {
 		hints = "[↑↓] 浏览  [i] 切换注入  [c] 清空  [Esc] 返回"
 	case PageSkills:
 		hints = "[↑↓] 选择  [Enter] 激活  [Esc] 返回"
+	case PageSetup:
+		hints = "[Enter] 继续  [Ctrl+C] 退出"
 	default:
 		if slashActive {
 			hints = "[↑↓] 选择  [Tab] 补全  [Enter] 运行  [/] 命令"

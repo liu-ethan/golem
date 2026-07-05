@@ -53,6 +53,15 @@ type Model struct {
 	errMsg     string
 	quitting   bool
 	showCursor bool
+
+	needsSetup          bool
+	setupStep           int
+	setupDefaultBaseURL string
+	setupDefaultModel   string
+	setupBaseURL        string
+	setupAPIKey         string
+	setupModel          string
+	setupErrMsg         string
 }
 
 // cursorBlinkMsg 驱动输入区光标闪烁。
@@ -60,17 +69,20 @@ type cursorBlinkMsg struct{}
 
 // Config 启动 TUI 所需的依赖与展示参数。
 type Config struct {
-	ProjectRoot  string
-	Version      string
-	Agent        *agent.Agent
-	Store        *session.Store
-	Policy       *approval.Policy
-	Sandbox      string
-	ModelName    string
-	ContextLimit int
-	RulesLines   []string
-	SkillLoader  *skills.Loader
-	LLMClient    llm.LLMClient
+	ProjectRoot      string
+	Version          string
+	Agent            *agent.Agent
+	Store            *session.Store
+	Policy           *approval.Policy
+	Sandbox          string
+	ModelName        string
+	ContextLimit     int
+	RulesLines       []string
+	SkillLoader      *skills.Loader
+	LLMClient        llm.LLMClient
+	NeedsSetup       bool
+	DefaultBaseURL   string
+	DefaultModel     string
 }
 
 // NewModel 根据 Config 构造初始 Bubble Tea Model。
@@ -92,22 +104,27 @@ func NewModel(cfg Config) Model {
 	}
 
 	m := Model{
-		agent:       cfg.Agent,
-		store:       cfg.Store,
-		policy:      cfg.Policy,
-		status:      status,
-		projectRoot: cfg.ProjectRoot,
-		version:     cfg.Version,
-		activePage:  PageWelcome,
-		rulesLines:  cfg.RulesLines,
-		skillLoader: cfg.SkillLoader,
-		llmClient:   cfg.LLMClient,
-		permissions: PermissionsPage{Tab: PermTabModes, Cursor: approvalModeIndex(cfg.Policy.Mode())},
-		width:       80,
-		height:      24,
-		showCursor:  true,
+		agent:               cfg.Agent,
+		store:               cfg.Store,
+		policy:              cfg.Policy,
+		status:              status,
+		projectRoot:         cfg.ProjectRoot,
+		version:             cfg.Version,
+		activePage:          PageWelcome,
+		rulesLines:          cfg.RulesLines,
+		skillLoader:         cfg.SkillLoader,
+		llmClient:           cfg.LLMClient,
+		permissions:         PermissionsPage{Tab: PermTabModes, Cursor: approvalModeIndex(cfg.Policy.Mode())},
+		width:               80,
+		height:              24,
+		showCursor:          true,
+		needsSetup:          cfg.NeedsSetup,
+		setupDefaultBaseURL: cfg.DefaultBaseURL,
+		setupDefaultModel:   cfg.DefaultModel,
 	}
-	if len(cfg.Agent.Messages()) > 0 {
+	if cfg.NeedsSetup && len(cfg.Agent.Messages()) > 0 {
+		m.activePage = PageSetup
+	} else if len(cfg.Agent.Messages()) > 0 {
 		m.lines = rebuildChatFromMessages(cfg.Agent.Messages())
 		m.activePage = PageChat
 	}
@@ -236,6 +253,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch m.activePage {
 	case PageWelcome:
 		return m.handleWelcomeKey(key)
+	case PageSetup:
+		return m.handleSetupKey(msg, key)
 	case PagePermissions:
 		return m.handlePermissionsKey(key)
 	case PageSessions:
@@ -290,7 +309,14 @@ func (m Model) handleSessionsKey(key string) (Model, tea.Cmd) {
 func (m Model) handleWelcomeKey(key string) (Model, tea.Cmd) {
 	switch key {
 	case "enter", " ":
-		m.activePage = PageChat
+		if m.needsSetup {
+			m.activePage = PageSetup
+			m.setupStep = setupStepBaseURL
+			m.input = ""
+			m.setupErrMsg = ""
+		} else {
+			m.activePage = PageChat
+		}
 	case "q", "ctrl+c", "ctrl+d":
 		return m.quit()
 	}

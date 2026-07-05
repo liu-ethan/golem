@@ -52,7 +52,7 @@ func OnSessionEnd(ctx context.Context, p SessionEndParams) error {
 		return nil
 	}
 
-	facts, err := extractFacts(ctx, p.LLM, p.Messages)
+	facts, err := extractFacts(ctx, p.LLM, p.Messages, p.ProjectRoot)
 	if err != nil {
 		return fmt.Errorf("layer1 extract: %w", err)
 	}
@@ -91,10 +91,14 @@ func OnSessionEnd(ctx context.Context, p SessionEndParams) error {
 }
 
 // extractFacts 调用 Complete 从会话消息中提取情节记忆。
-func extractFacts(ctx context.Context, client llm.LLMClient, messages []llm.Message) ([]MemoryFact, error) {
+func extractFacts(ctx context.Context, client llm.LLMClient, messages []llm.Message, projectRoot string) ([]MemoryFact, error) {
 	conversation := formatConversation(messages)
 	if strings.TrimSpace(conversation) == "" {
 		return nil, nil
+	}
+	userText := conversation
+	if root := strings.TrimSpace(projectRoot); root != "" {
+		userText = "project_root: " + root + "\n\n" + conversation
 	}
 
 	text, _, err := client.Complete(ctx, llm.CompleteRequest{
@@ -103,7 +107,7 @@ func extractFacts(ctx context.Context, client llm.LLMClient, messages []llm.Mess
 			Role: llm.RoleUser,
 			Content: []llm.ContentBlock{{
 				Type: "text",
-				Text: conversation,
+				Text: userText,
 			}},
 		}},
 		MaxTokens: 2048,

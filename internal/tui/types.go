@@ -12,6 +12,7 @@ type PageKind int
 
 const (
 	PageWelcome PageKind = iota
+	PageSetup
 	PageChat
 	PagePermissions
 	PageSessions

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/tencent-docs/golem/internal/agent"
 	"github.com/tencent-docs/golem/internal/approval"
 	"github.com/tencent-docs/golem/internal/memory"
 	"github.com/tencent-docs/golem/internal/sandbox"
@@ -131,13 +132,16 @@ func (m Model) applySlash(raw string, r slashResult) (Model, tea.Cmd) {
 		return m, m.runCompact(r.compactInstructions)
 	}
 	if r.clearContext {
-		newID := m.agent.ClearContext()
+		newID, snap := m.agent.ClearContext()
 		userLine := ChatLine{Kind: LineUser, Text: raw}
 		m.lines = []ChatLine{userLine}
 		m.streaming = ""
 		m.syncStatus()
 		m.status.SessionID = shortID(newID)
 		m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: "已清空上下文，新 session " + shortID(newID)})
+		if snap.HadUserMessages {
+			return m, m.deferSessionEnd(snap)
+		}
 		return m, nil
 	}
 	if r.showUsage {
@@ -494,6 +498,14 @@ func (m Model) runInit(write bool) tea.Cmd {
 	return func() tea.Msg {
 		_, err := ag.RunInit(context.Background(), write)
 		return initDoneMsg{err: err}
+	}
+}
+
+func (m Model) deferSessionEnd(snap agent.SessionEndSnapshot) tea.Cmd {
+	ag := m.agent
+	return func() tea.Msg {
+		ag.OnSessionEndSnapshot(snap)
+		return clearContextEndMsg{}
 	}
 }
 

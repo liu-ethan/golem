@@ -112,6 +112,15 @@ func (m *MockLLM) Model() string {
 	return m.ModelName
 }
 
+// Configure 模拟运行时 provider 更新，供首次配置向导测试使用。
+func (m *MockLLM) Configure(_ string, _ string, model string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if model != "" {
+		m.ModelName = model
+	}
+}
+
 var errNoMockResponse = &mockError{"no mock stream response configured"}
 
 type mockError struct{ msg string }

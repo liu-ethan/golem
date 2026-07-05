@@ -106,6 +106,21 @@ func runTUI(showVersion bool, approvalFlag, sandboxFlag, resumeFlag string) int 
 		return 1
 	}
 
+	if _, err := config.EnsureProjectConfig(projectRoot); err != nil {
+		fmt.Fprintf(os.Stderr, "golem: ensure config: %v\n", err)
+		return 1
+	}
+
+	cfgPreview, err := config.LoadConfig(projectRoot, config.Overrides{
+		Approval: approvalFlag,
+		Sandbox:  sandboxFlag,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "golem: load config: %v\n", err)
+		return 1
+	}
+	needsSetup := config.NeedsProviderSetup(cfgPreview)
+
 	boot, err := bootstrapAgent(projectRoot, config.Overrides{
 		Approval: approvalFlag,
 		Sandbox:  sandboxFlag,
@@ -123,17 +138,20 @@ func runTUI(showVersion bool, approvalFlag, sandboxFlag, resumeFlag string) int 
 	}
 
 	if err := tui.Run(tui.Config{
-		ProjectRoot:  projectRoot,
-		Version:      version,
-		Agent:        boot.ag,
-		Store:        boot.store,
-		Policy:       boot.policy,
-		Sandbox:      boot.cfg.Defaults.Sandbox,
-		ModelName:    boot.cfg.Provider.Model,
-		ContextLimit: boot.cfg.Provider.ContextLimit,
-		RulesLines:   rulesLines,
-		SkillLoader:  skills.NewLoader(projectRoot),
-		LLMClient:    boot.agLLM(),
+		ProjectRoot:      projectRoot,
+		Version:          version,
+		Agent:            boot.ag,
+		Store:            boot.store,
+		Policy:           boot.policy,
+		Sandbox:          boot.cfg.Defaults.Sandbox,
+		ModelName:        boot.cfg.Provider.Model,
+		ContextLimit:     boot.cfg.Provider.ContextLimit,
+		RulesLines:       rulesLines,
+		SkillLoader:      skills.NewLoader(projectRoot),
+		LLMClient:        boot.agLLM(),
+		NeedsSetup:       needsSetup,
+		DefaultBaseURL:   cfgPreview.Provider.BaseURL,
+		DefaultModel:     cfgPreview.Provider.Model,
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "golem: %v\n", err)
 		return 1

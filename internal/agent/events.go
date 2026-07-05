@@ -1,6 +1,17 @@
 package agent
 
-import "context"
+import (
+	"context"
+
+	"github.com/tencent-docs/golem/internal/llm"
+)
+
+// SessionEndSnapshot 保存已结束会话的快照，供 /clear 异步收尾使用。
+type SessionEndSnapshot struct {
+	SessionID       string
+	HadUserMessages bool
+	Messages        []llm.Message
+}
 
 // EventType 标识 Agent 向 TUI 上报的事件种类。
 type EventType string
@@ -74,3 +85,6 @@ type NoopSessionEndHandler struct{}
 
 // OnSessionEnd 为空实现。
 func (NoopSessionEndHandler) OnSessionEnd(_ string, _ bool) {}
+
+// OnSessionEndSnapshot 为空实现。
+func (NoopSessionEndHandler) OnSessionEndSnapshot(_ SessionEndSnapshot) {}

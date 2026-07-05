@@ -195,6 +195,20 @@ func (a *Agent) OnSessionEnd() {
 	a.onSession.OnSessionEnd(a.sessionID, a.hadUserMessages)
 }
 
+// OnSessionEndSnapshot 对已结束会话快照执行收尾（持久化、Layer 1），供 /clear 后台调用。
+func (a *Agent) OnSessionEndSnapshot(snap SessionEndSnapshot) {
+	if snap.SessionID == "" {
+		return
+	}
+	if sh, ok := a.onSession.(interface {
+		OnSessionEndSnapshot(snap SessionEndSnapshot)
+	}); ok {
+		sh.OnSessionEndSnapshot(snap)
+		return
+	}
+	a.onSession.OnSessionEnd(snap.SessionID, snap.HadUserMessages)
+}
+
 // SessionID 返回当前会话 ID。
 func (a *Agent) SessionID() string {
 	return a.sessionID

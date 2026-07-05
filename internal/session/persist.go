@@ -24,6 +24,14 @@ func (p PersistOnEnd) OnSessionEnd(sessionID string, hadUserMessages bool) {
 	_ = p.Store.SyncMessages(sessionID, p.Source.Messages())
 }
 
+// OnSessionEndWithMessages 使用快照消息持久化已结束会话，供 /clear 异步收尾。
+func (p PersistOnEnd) OnSessionEndWithMessages(sessionID string, hadUserMessages bool, messages []llm.Message) {
+	if !hadUserMessages || p.Store == nil || len(messages) == 0 {
+		return
+	}
+	_ = p.Store.SyncMessages(sessionID, messages)
+}
+
 // SyncFromSource 立即将 Source 当前消息快照写入 Store，供每轮对话后增量持久化。
 func SyncFromSource(store *Store, source MessageSource) error {
 	if store == nil || source == nil {

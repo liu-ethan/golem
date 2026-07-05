@@ -169,6 +169,19 @@ func (c *AnthropicClient) SetModel(model string) {
 	}
 }
 
+// Configure 运行时更新 provider 接入参数；空字符串字段保持不变。
+func (c *AnthropicClient) Configure(baseURL, apiKey, model string) {
+	if baseURL != "" {
+		c.baseURL = strings.TrimRight(baseURL, "/")
+	}
+	if apiKey != "" {
+		c.apiKey = apiKey
+	}
+	if model != "" {
+		c.model = model
+	}
+}
+
 // Model 返回当前配置的模型名。
 func (c *AnthropicClient) Model() string {
 	return c.model

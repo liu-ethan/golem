@@ -53,6 +53,20 @@ func (a *Agent) RunSkillOnce(ctx context.Context, skill skills.Skill, query stri
 	return a.handleUserMessage(ctx, query, handler)
 }
 
+// ConfigureProvider 运行时更新 LLM 接入端点、密钥与模型名。
+func (a *Agent) ConfigureProvider(baseURL, apiKey, model string) error {
+	if strings.TrimSpace(apiKey) == "" {
+		return fmt.Errorf("api_key is required")
+	}
+	if setter, ok := a.llm.(interface {
+		Configure(baseURL, apiKey, model string)
+	}); ok {
+		setter.Configure(baseURL, apiKey, model)
+		return nil
+	}
+	return fmt.Errorf("llm client does not support provider reconfiguration")
+}
+
 // SetModel 切换 LLM 模型名（AnthropicClient 实现）。
 func (a *Agent) SetModel(model string) error {
 	if model == "" {
@@ -73,9 +87,14 @@ func (a *Agent) ModelName() string {
 	return ""
 }
 
-// ClearContext 清空当前对话上下文并开新 session，保留 user_profile 与 system prompt 基础部分。
-func (a *Agent) ClearContext() string {
-	a.OnSessionEnd()
+// ClearContext 立即清空当前对话上下文并开新 session，返回新 ID 与旧会话快照。
+// 旧会话收尾（持久化、Layer 1）须由调用方通过 OnSessionEndSnapshot 异步执行，避免阻塞 UI。
+func (a *Agent) ClearContext() (newSessionID string, snapshot SessionEndSnapshot) {
+	snapshot = SessionEndSnapshot{
+		SessionID:       a.sessionID,
+		HadUserMessages: a.hadUserMessages,
+		Messages:        a.Messages(),
+	}
 	a.sessionID = uuid.NewString()
 	a.messages = nil
 	a.memoryInjected = false
@@ -88,7 +107,7 @@ func (a *Agent) ClearContext() string {
 		base = prompts.BaseSystemPrompt()
 	}
 	a.systemPrompt = base
-	return a.sessionID
+	return a.sessionID, snapshot
 }
 
 // RunReview 对 git diff / working tree 执行 code review，返回 review 文本。

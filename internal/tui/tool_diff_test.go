@@ -142,6 +142,20 @@ func TestFormatToolCardBashSuccess(t *testing.T) {
 	}
 }
 
+func TestFormatBashOutputBinarySanitized(t *testing.T) {
+	out := formatBashOutput("/usr/bin/go: symbolic link to ../lib/go-1.22/bin/go\n\x7fELF\x00\x01\x02", false, 80)
+	plain := stripVisible(out)
+	if !strings.Contains(plain, "symbolic link") {
+		t.Fatalf("expected readable line preserved: %s", plain)
+	}
+	if strings.Contains(plain, "ELF") {
+		t.Fatalf("expected binary line omitted: %s", plain)
+	}
+	if !strings.Contains(plain, "[二进制输出已省略]") {
+		t.Fatalf("expected binary omission marker: %s", plain)
+	}
+}
+
 func TestFormatToolCardBashFailure(t *testing.T) {
 	root := testutil.TempProjectRoot(t)
 	out := formatToolCard(ChatLine{
@@ -160,5 +174,50 @@ func TestFormatToolCardBashFailure(t *testing.T) {
 	}
 	if strings.Contains(stripVisible(out), "[错误]") {
 		t.Fatal("bash failure should use dedicated badge, not generic [错误]")
+	}
+	if strings.Contains(stripVisible(out), "[已拒绝]") {
+		t.Fatal("exec failure must not show policy denial badge")
+	}
+}
+
+func TestUpdateLastToolBashExecFailureNotDenied(t *testing.T) {
+	m := testModel(t)
+	m.lines = append(m.lines, ChatLine{
+		Kind:      LineTool,
+		ToolName:  "bash",
+		ToolState: ToolRunning,
+	})
+	m.updateLastTool("bash", nil, "exit status 1", true)
+	line := m.lines[len(m.lines)-1]
+	if line.ToolState != ToolDone {
+		t.Fatalf("ToolState = %v, want ToolDone", line.ToolState)
+	}
+	if !line.ToolError {
+		t.Fatal("expected ToolError true")
+	}
+	out := formatToolCard(line, 80, m.projectRoot)
+	if strings.Contains(stripVisible(out), "[已拒绝]") {
+		t.Fatal("approved bash with non-zero exit must not show [已拒绝]")
+	}
+	if !strings.Contains(out, style.ErrText.Render("[✗ 执行失败]")) {
+		t.Fatalf("expected exec failure badge: %s", stripVisible(out))
+	}
+}
+
+func TestUpdateLastToolPolicyDenied(t *testing.T) {
+	m := testModel(t)
+	m.lines = append(m.lines, ChatLine{
+		Kind:      LineTool,
+		ToolName:  "bash",
+		ToolState: ToolConfirm,
+	})
+	m.updateLastTool("bash", nil, "Error: user denied tool execution", true)
+	line := m.lines[len(m.lines)-1]
+	if line.ToolState != ToolDenied {
+		t.Fatalf("ToolState = %v, want ToolDenied", line.ToolState)
+	}
+	out := formatToolCard(line, 80, m.projectRoot)
+	if !strings.Contains(out, style.ErrText.Render("[已拒绝]")) {
+		t.Fatalf("expected denial badge: %s", stripVisible(out))
 	}
 }

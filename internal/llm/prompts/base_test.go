@@ -19,6 +19,9 @@ func TestBuildBaseSystemPromptWithoutProfile(t *testing.T) {
 	if !strings.Contains(got, "golem") {
 		t.Error("expected base prompt content")
 	}
+	if !strings.Contains(got, root) {
+		t.Errorf("expected project_root path in prompt, got = %q", got)
+	}
 	if strings.Contains(got, "用户画像") {
 		t.Error("should not contain profile section")
 	}

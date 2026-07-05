@@ -47,6 +47,9 @@ type compactDoneMsg struct {
 	err     error
 }
 
+// clearContextEndMsg 表示 /clear 后台会话收尾完成（无 UI 更新）。
+type clearContextEndMsg struct{}
+
 // bindRunConfirm 为当前 Agent 轮次注册工具确认回调；须在启动 goroutine 之前同步调用。
 func (m *Model) bindRunConfirm(ctx context.Context) {
 	confirm := func(toolName string, input map[string]any) (bool, error) {
@@ -267,13 +270,20 @@ func (m *Model) updateLastTool(name string, input map[string]any, output string,
 		}
 		line.ToolOutput = output
 		line.ToolError = isErr
-		if isErr {
+		if toolOutputIsPolicyDenied(output) {
 			line.ToolState = ToolDenied
 		} else {
 			line.ToolState = ToolDone
 		}
 		return
 	}
+}
+
+// toolOutputIsPolicyDenied 判断工具结果是否来自审批层或权限规则拒绝，而非 bash 等非零退出码。
+func toolOutputIsPolicyDenied(output string) bool {
+	return strings.HasPrefix(output, "Error: denied by") ||
+		strings.HasPrefix(output, "Error: user denied") ||
+		strings.HasPrefix(output, "Error: tool confirmation unavailable")
 }
 
 func (m *Model) syncStatus() {

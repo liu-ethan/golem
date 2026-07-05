@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode"
 
 	"github.com/tencent-docs/golem/internal/tools"
 	"github.com/tencent-docs/golem/internal/tui/style"
@@ -73,7 +74,7 @@ func formatBashOutput(output string, isErr bool, width int) string {
 			continue
 		}
 		b.WriteString("│ ")
-		b.WriteString(bodyStyle.Render(truncateRunes(ln, inner)))
+		b.WriteString(bodyStyle.Render(truncateRunes(sanitizeBashLine(ln), inner)))
 		b.WriteString("\n")
 		shown++
 	}
@@ -263,6 +264,41 @@ func splitLines(s string) []string {
 		return nil
 	}
 	return strings.Split(strings.TrimSuffix(s, "\n"), "\n")
+}
+
+const bashBinaryLineThreshold = 3 // 不可打印字符占比超过 1/3 时整行省略
+
+// sanitizeBashLine 清理 bash 单行输出，避免二进制或控制字符破坏 TUI 渲染。
+func sanitizeBashLine(line string) string {
+	if line == "" {
+		return line
+	}
+	nonPrintable := 0
+	total := 0
+	for _, r := range line {
+		total++
+		if !isBashPrintableRune(r) {
+			nonPrintable++
+		}
+	}
+	if total > 0 && nonPrintable*bashBinaryLineThreshold > total {
+		return "[二进制输出已省略]"
+	}
+	var b strings.Builder
+	b.Grow(len(line))
+	for _, r := range line {
+		if isBashPrintableRune(r) {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('\uFFFD')
+		}
+	}
+	return b.String()
+}
+
+// isBashPrintableRune 判断 rune 是否可在 bash 工具卡片中安全展示。
+func isBashPrintableRune(r rune) bool {
+	return r == '\t' || unicode.IsPrint(r)
 }
 
 func inputString(input map[string]any, key string) (string, bool) {

@@ -29,9 +29,14 @@ func BaseSystemPrompt() string {
 }
 
 // BuildBaseSystemPrompt 读取 projectRoot/.golem/user_profile.md（若存在）并拼入基础 system prompt。
+// 始终注入 project_root 绝对路径，避免模型从记忆或训练数据中猜测错误路径。
 // P0 仅注入 profile；BM25 相关记忆由 Agent 在首条用户消息后通过 InjectMemoryBlock 追加。
 func BuildBaseSystemPrompt(projectRoot string) (string, error) {
 	base := BaseSystemPrompt()
+	root := strings.TrimSpace(projectRoot)
+	if root != "" {
+		base += fmt.Sprintf("\n\n## 项目根目录\n当前 project_root 绝对路径：%s\nbash 的工作目录即为此路径；read_file、write_file 等工具的路径均相对此目录。", root)
+	}
 	profilePath := filepath.Join(projectRoot, ".golem", "user_profile.md")
 	data, err := os.ReadFile(profilePath)
 	if err != nil {
@@ -55,7 +60,7 @@ func InjectMemoryBlock(facts []string) string {
 	}
 	var b strings.Builder
 	b.WriteString("\n\n## 相关记忆\n")
-	b.WriteString("以下是与当前任务相关的历史事实片段，供参考；若与当前上下文冲突，以当前对话与代码为准。\n")
+	b.WriteString("以下是与当前任务相关的历史事实片段，供参考；若与当前上下文或 system prompt 中的 project_root 冲突，以 project_root 与当前对话为准。\n")
 	n := 0
 	for _, fact := range facts {
 		fact = strings.TrimSpace(fact)

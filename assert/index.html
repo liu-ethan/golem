@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>golem — Go LLM Execution Model</title>
+  <meta name="description" content="用 Go 构建的轻量级 AI 编程 Agent CLI。分层记忆、声明式权限、审批交互，对齐 Claude Code / Codex 体验。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f4f6fa;
+      --bg-elevated: #ffffff;
+      --bg-muted: #eef1f7;
+      --ink: #141820;
+      --ink-secondary: #4a5160;
+      --ink-muted: #7a8294;
+      --border: #dde2ec;
+      --border-strong: #c8cfdd;
+      --accent: #c45a1a;
+      --accent-hover: #a84a12;
+      --accent-soft: #fff3ea;
+      --accent-glow: rgba(196, 90, 26, 0.12);
+      --go: #00add8;
+      --go-soft: #e6f7fb;
+      --success: #1f6b4a;
+      --success-soft: #e8f5ef;
+      --shadow-sm: 0 1px 2px rgba(20, 24, 32, 0.04);
+      --shadow-md: 0 8px 32px rgba(20, 24, 32, 0.06);
+      --shadow-lg: 0 24px 64px rgba(20, 24, 32, 0.08);
+      --radius: 14px;
+      --radius-sm: 8px;
+      --font-display: "Instrument Serif", Georgia, serif;
+      --font-body: "DM Sans", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      --nav-h: 64px;
+      --max-w: 1120px;
+      --transition: 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; scroll-padding-top: calc(var(--nav-h) + 24px); }
+
+    body {
+      font-family: var(--font-body);
+      font-size: 16px;
+      line-height: 1.65;
+      color: var(--ink);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    /* ── Nav ── */
+    .nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: var(--nav-h);
+      z-index: 100;
+      background: rgba(244, 246, 250, 0.82);
+      backdrop-filter: blur(16px) saturate(1.4);
+      border-bottom: 1px solid var(--border);
+      transition: box-shadow var(--transition);
+    }
+    .nav.scrolled { box-shadow: var(--shadow-sm); }
+    .nav-inner {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 0 24px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--ink);
+      font-weight: 600;
+      font-size: 15px;
+      letter-spacing: -0.02em;
+    }
+    .nav-brand .mark {
+      width: 28px; height: 28px;
+      background: var(--accent);
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      list-style: none;
+    }
+    .nav-links a {
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ink-secondary);
+      text-decoration: none;
+      border-radius: var(--radius-sm);
+      transition: color var(--transition), background var(--transition);
+    }
+    .nav-links a:hover { color: var(--ink); background: var(--bg-muted); }
+    .nav-links a.active { color: var(--accent); background: var(--accent-soft); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      font-family: var(--font-body);
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px var(--accent-glow);
+    }
+    .btn-primary:hover { background: var(--accent-hover); box-shadow: 0 4px 16px var(--accent-glow); }
+    .btn-ghost {
+      background: var(--bg-elevated);
+      color: var(--ink);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { border-color: var(--border-strong); background: var(--bg-muted); }
+    .btn-sm { padding: 7px 14px; font-size: 13px; }
+
+    .menu-toggle {
+      display: none;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      cursor: pointer;
+      color: var(--ink);
+    }
+
+    /* ── Layout ── */
+    .container { max-width: var(--max-w); margin: 0 auto; padding: 0 24px; }
+    section { padding: 96px 0; }
+    section:first-of-type { padding-top: calc(var(--nav-h) + 64px); }
+
+    .section-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+    .section-label::before {
+      content: "";
+      width: 20px; height: 1px;
+      background: var(--accent);
+    }
+    .section-title {
+      font-family: var(--font-display);
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      font-weight: 400;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+    .section-desc {
+      font-size: 17px;
+      color: var(--ink-secondary);
+      max-width: 560px;
+      margin-bottom: 48px;
+    }
+
+    /* ── Hero ── */
+    .hero { padding-bottom: 64px; }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.05fr;
+      gap: 48px;
+      align-items: center;
+    }
+    .repo-banner {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px 8px 10px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--ink-secondary);
+      text-decoration: none;
+      margin-bottom: 28px;
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .repo-banner:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .repo-banner svg { flex-shrink: 0; color: var(--ink); }
+    .repo-banner .url { color: var(--accent); font-weight: 500; }
+
+    .hero h1 {
+      font-family: var(--font-display);
+      font-size: clamp(2.5rem, 5.5vw, 3.75rem);
+      font-weight: 400;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      margin-bottom: 20px;
+    }
+    .hero h1 em {
+      font-style: italic;
+      color: var(--accent);
+    }
+    .hero-lead {
+      font-size: 18px;
+      color: var(--ink-secondary);
+      margin-bottom: 32px;
+      max-width: 480px;
+    }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 36px; }
+    .hero-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .tag {
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: 999px;
+      background: var(--bg-muted);
+      color: var(--ink-secondary);
+      border: 1px solid var(--border);
+    }
+    .tag-go { background: var(--go-soft); color: var(--go); border-color: transparent; }
+
+    .hero-visual {
+      position: relative;
+    }
+    .hero-visual::before {
+      content: "";
+      position: absolute;
+      inset: -20px -20px -20px 0;
+      background: radial-gradient(ellipse at 60% 40%, var(--accent-glow), transparent 70%);
+      pointer-events: none;
+    }
+    .screenshot-frame {
+      position: relative;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-lg);
+      background: var(--bg-elevated);
+    }
+    .screenshot-frame img {
+      display: block;
+      width: 100%;
+      height: auto;
+      object-fit: fill;
+    }
+    .frame-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 14px;
+      background: var(--bg-muted);
+      border-bottom: 1px solid var(--border);
+    }
+    .frame-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .frame-dot:nth-child(1) { background: #ff5f57; }
+    .frame-dot:nth-child(2) { background: #febc2e; }
+    .frame-dot:nth-child(3) { background: #28c840; }
+    .frame-title {
+      flex: 1;
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink-muted);
+    }
+
+    /* ── Features ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    .feature-card {
+      padding: 28px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    }
+    .feature-card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-md);
+      border-color: var(--border-strong);
+    }
+    .feature-icon {
+      width: 40px; height: 40px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 18px;
+      margin-bottom: 18px;
+    }
+    .feature-card h3 {
+      font-size: 17px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+    .feature-card p {
+      font-size: 14px;
+      color: var(--ink-secondary);
+      line-height: 1.6;
+    }
+
+    /* ── Comparison ── */
+    .compare-section { background: var(--bg-elevated); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .compare-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      background: var(--bg-muted);
+      border-radius: var(--radius-sm);
+      margin-bottom: 32px;
+      width: fit-content;
+    }
+    .compare-tab {
+      padding: 8px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      background: transparent;
+      color: var(--ink-secondary);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background var(--transition), color var(--transition);
+    }
+    .compare-tab.active {
+      background: var(--bg-elevated);
+      color: var(--ink);
+      box-shadow: var(--shadow-sm);
+    }
+    .compare-panel { display: none; animation: fadeUp 0.35s ease; }
+    .compare-panel.active { display: block; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .compare-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    table.compare {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    table.compare th,
+    table.compare td {
+      padding: 16px 20px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    table.compare th {
+      background: var(--bg-muted);
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--ink-secondary);
+    }
+    table.compare th.highlight { color: var(--accent); }
+    table.compare tr:last-child td { border-bottom: none; }
+    table.compare td:first-child { font-weight: 500; color: var(--ink); }
+    table.compare .win {
+      color: var(--success);
+      font-weight: 600;
+    }
+    table.compare .dim { color: var(--ink-muted); }
+
+    .highlight-cards {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+    .highlight-card {
+      padding: 24px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .highlight-card h4 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .highlight-card h4 .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .highlight-card p { font-size: 14px; color: var(--ink-secondary); }
+
+    /* ── Quick Start ── */
+    .quickstart-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+    }
+    .steps { list-style: none; counter-reset: step; }
+    .steps li {
+      counter-increment: step;
+      position: relative;
+      padding-left: 48px;
+      padding-bottom: 32px;
+    }
+    .steps li:last-child { padding-bottom: 0; }
+    .steps li::before {
+      content: counter(step);
+      position: absolute;
+      left: 0; top: 0;
+      width: 32px; height: 32px;
+      display: grid;
+      place-items: center;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-radius: 50%;
+    }
+    .steps li:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      left: 15px; top: 36px;
+      width: 2px;
+      height: calc(100% - 20px);
+      background: var(--border);
+    }
+    .steps h4 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .steps p { font-size: 14px; color: var(--ink-secondary); margin-bottom: 12px; }
+
+    .code-block {
+      position: relative;
+      background: #1a1d26;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+    .code-block pre {
+      padding: 18px 20px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.7;
+      color: #e8eaef;
+    }
+    .code-block .copy-btn {
+      position: absolute;
+      top: 10px; right: 10px;
+      padding: 5px 10px;
+      font-family: var(--font-body);
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(255,255,255,0.08);
+      color: #aab0be;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background var(--transition), color var(--transition);
+    }
+    .code-block .copy-btn:hover { background: rgba(255,255,255,0.14); color: #fff; }
+    .code-block .copy-btn.copied { color: #6ee7a0; }
+    .code-block .kw { color: #c792ea; }
+    .code-block .str { color: #c3e88d; }
+    .code-block .cm { color: #676e95; }
+    .code-block .fn { color: #82aaff; }
+
+    /* ── Usage / Screenshots ── */
+    .usage-layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 32px;
+      align-items: start;
+    }
+    .shot-tabs {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: sticky;
+      top: calc(var(--nav-h) + 24px);
+    }
+    .shot-tab {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      padding: 14px 16px;
+      text-align: left;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
+    }
+    .shot-tab:hover { border-color: var(--border-strong); }
+    .shot-tab.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .shot-tab .label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .shot-tab .desc {
+      font-size: 12px;
+      color: var(--ink-muted);
+    }
+    .shot-panel { display: none; }
+    .shot-panel.active { display: block; animation: fadeUp 0.35s ease; }
+    .shot-panel .screenshot-frame img {
+      width: 100%;
+      max-height: 520px;
+      object-fit: fill;
+    }
+    .shot-caption {
+      margin-top: 16px;
+      padding: 16px 20px;
+      background: var(--bg-muted);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      color: var(--ink-secondary);
+    }
+    .shot-caption strong { color: var(--ink); }
+
+    .cmd-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 32px;
+    }
+    .cmd-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+    }
+    .cmd-item code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+    .cmd-item span { color: var(--ink-secondary); }
+
+    /* ── Architecture ── */
+    .arch-section { background: var(--bg-elevated); border-top: 1px solid var(--border); }
+    .arch-flow {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .arch-node {
+      position: relative;
+      padding: 20px 24px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity 0.5s ease, transform 0.5s ease, border-color var(--transition);
+    }
+    .arch-node.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .arch-node:hover { border-color: var(--accent); }
+    .arch-node .name {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+    .arch-node .detail {
+      font-size: 13px;
+      color: var(--ink-secondary);
+    }
+    .arch-arrow {
+      display: flex;
+      justify-content: center;
+      padding: 6px 0;
+      color: var(--border-strong);
+      opacity: 0;
+      transition: opacity 0.4s ease 0.1s;
+    }
+    .arch-arrow.visible { opacity: 1; }
+    .arch-arrow svg { width: 20px; height: 20px; }
+
+    .tree-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      margin-top: 64px;
+    }
+    .tree-block h4 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .tree-block pre {
+      padding: 20px;
+      background: #1a1d26;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.65;
+      color: #b4bac9;
+      overflow-x: auto;
+    }
+    .tree-block pre .dir { color: var(--accent); }
+    .tree-block pre .file { color: #82aaff; }
+
+    /* ── Footer ── */
+    footer {
+      padding: 48px 0;
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+    footer p {
+      font-size: 14px;
+      color: var(--ink-muted);
+      margin-bottom: 12px;
+    }
+    footer a { color: var(--accent); text-decoration: none; font-weight: 500; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── Reveal ── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 960px) {
+      .hero-grid { grid-template-columns: 1fr; }
+      .hero-visual { order: -1; }
+      .features-grid { grid-template-columns: 1fr 1fr; }
+      .quickstart-grid { grid-template-columns: 1fr; }
+      .usage-layout { grid-template-columns: 1fr; }
+      .shot-tabs { flex-direction: row; overflow-x: auto; position: static; }
+      .shot-tab { min-width: 180px; flex-shrink: 0; }
+      .tree-grid { grid-template-columns: 1fr; }
+      .highlight-cards { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      section { padding: 64px 0; }
+      .nav-links { display: none; }
+      .nav-links.open {
+        display: flex;
+        flex-direction: column;
+        position: absolute;
+        top: var(--nav-h);
+        left: 0; right: 0;
+        background: var(--bg-elevated);
+        border-bottom: 1px solid var(--border);
+        padding: 12px;
+      }
+      .menu-toggle { display: block; }
+      .features-grid { grid-template-columns: 1fr; }
+      .cmd-grid { grid-template-columns: 1fr; }
+      .compare-tabs { width: 100%; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-brand">
+      <span class="mark">G</span>
+      golem
+    </a>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="#features">功能</a></li>
+      <li><a href="#highlights">设计亮点</a></li>
+      <li><a href="#quickstart">快速开始</a></li>
+      <li><a href="#usage">如何使用</a></li>
+      <li><a href="#architecture">架构</a></li>
+    </ul>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <a href="https://github.com/liu-ethan/golem" class="btn btn-primary btn-sm" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+      <button class="menu-toggle" id="menuToggle" aria-label="菜单">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5h12M3 9h12M3 13h12"/></svg>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-grid">
+      <div>
+        <a href="https://github.com/liu-ethan/golem" class="repo-banner" target="_blank" rel="noopener">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          <span class="url">github.com/liu-ethan/golem</span>
+        </a>
+        <h1>Go 原生的<br><em>AI 编程 Agent</em></h1>
+        <p class="hero-lead">
+          Go LLM Execution Model — 单二进制、零 CGO、毫秒级冷启动。
+          分层记忆管道、声明式权限引擎、四种审批模式，UX 对齐 Claude Code 与 Codex CLI。
+        </p>
+        <div class="hero-actions">
+          <a href="#quickstart" class="btn btn-primary">快速开始</a>
+          <a href="https://github.com/liu-ethan/golem" class="btn btn-ghost" target="_blank" rel="noopener">查看源码</a>
+        </div>
+        <div class="hero-tags">
+          <span class="tag tag-go">Go 1.22+</span>
+          <span class="tag">Bubble Tea TUI</span>
+          <span class="tag">BM25 记忆检索</span>
+          <span class="tag">YAML 权限规则</span>
+          <span class="tag">Linux Namespace</span>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="screenshot-frame">
+          <div class="frame-bar">
+            <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
+            <span class="frame-title">golem — welcome</span>
+          </div>
+          <img src="pic/welcome_page.png" alt="golem 欢迎页" width="800" height="400">
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section id="features">
+  <div class="container reveal">
+    <div class="section-label">Features</div>
+    <h2 class="section-title">核心功能</h2>
+    <p class="section-desc">从 Agent 主循环到三层记忆，golem 把 AI 编程助手需要的每一块都编译进一个静态二进制。</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">⟳</div>
+        <h3>Agent 主循环</h3>
+        <p>Streaming SSE 流式响应，自动识别 tool_use 并循环执行。内置 bash、read/write/edit、list_dir、grep 等工具。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">◎</div>
+        <h3>三层记忆系统</h3>
+        <p>Layer 0 滑动窗口压缩、Layer 1 BM25 情节记忆、Layer 2 自动合并 user_profile.md。按需注入，降低 Token 消耗。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⛨</div>
+        <h3>四层安全模型</h3>
+        <p>审批模式（UX）+ YAML 规则（bash 策略）+ project_root 路径隔离 + Linux Namespace 沙箱，各司其职。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⌘</div>
+        <h3>斜杠命令体系</h3>
+        <p>/permissions、/sessions、/compact、/context 等命令对齐 Claude Code / Codex CLI，Shift+Tab 切换审批模式。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>模型无关接入</h3>
+        <p>统一 Anthropic Messages API 协议，base_url 可配 Claude、DeepSeek 等兼容端点，不绑定单一厂商。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">▣</div>
+        <h3>Go 原生工程化</h3>
+        <p>纯 Go SQLite（modernc.org/sqlite）、Bubble Tea TUI、GitHub Actions CI。适合嵌入 CI/CD 与本地开发工作流。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Highlights / Comparison -->
+<section id="highlights" class="compare-section">
+  <div class="container reveal">
+    <div class="section-label">Highlights</div>
+    <h2 class="section-title">设计亮点</h2>
+    <p class="section-desc">深入研究 Claude Code 与 Codex CLI 的架构差异，在 Go 生态中实现差异化增强。</p>
+
+    <div class="compare-tabs" role="tablist">
+      <button class="compare-tab active" data-panel="table" role="tab">能力对比</button>
+      <button class="compare-tab" data-panel="cards" role="tab">核心差异化</button>
+    </div>
+
+    <div class="compare-panel active" id="panel-table" role="tabpanel">
+      <div class="compare-table-wrap">
+        <table class="compare">
+          <thead>
+            <tr>
+              <th>能力</th>
+              <th>Claude Code / Codex</th>
+              <th class="highlight">golem</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>记忆检索</td>
+              <td class="dim">全量注入或固定上限</td>
+              <td class="win">BM25 按需检索 top-K</td>
+            </tr>
+            <tr>
+              <td>记忆分层</td>
+              <td class="dim">单层或两阶段管道</td>
+              <td class="win">三层架构 Working / Episodic / Semantic</td>
+            </tr>
+            <tr>
+              <td>用户画像</td>
+              <td class="dim">有限或无</td>
+              <td class="win">每项目 user_profile.md，每 3 次会话自动更新</td>
+            </tr>
+            <tr>
+              <td>上下文压缩</td>
+              <td>手动或自动触发</td>
+              <td class="win">80% 阈值自动压缩 + /compact + /context 可视化</td>
+            </tr>
+            <tr>
+              <td>审批交互</td>
+              <td>plan / ask / auto 等模式</td>
+              <td class="win">四种模式 + Shift+Tab + /permissions 权限页</td>
+            </tr>
+            <tr>
+              <td>权限规则</td>
+              <td>YAML 声明式规则</td>
+              <td class="win">同样 YAML，deny &gt; ask &gt; allow，/permissions 管理</td>
+            </tr>
+            <tr>
+              <td>进程隔离</td>
+              <td>应用层 + sandbox 模式</td>
+              <td class="win">project_root 路径隔离 + bash namespace（P1）</td>
+            </tr>
+            <tr>
+              <td>部署形态</td>
+              <td class="dim">Node / Rust 运行时依赖</td>
+              <td class="win">单静态二进制，冷启动 &lt; 20ms，零 CGO</td>
+            </tr>
+            <tr>
+              <td>模型接入</td>
+              <td>厂商绑定或有限切换</td>
+              <td class="win">Anthropic 风格接口，base_url 自由配置</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="compare-panel" id="panel-cards" role="tabpanel">
+      <div class="highlight-cards">
+        <div class="highlight-card">
+          <h4><span class="dot"></span>会记住你的 Agent</h4>
+          <p>跨会话提取偏好与项目事实，BM25 检索按需注入。相比全量记忆注入，显著降低 Token 消耗，同时保持上下文相关性。</p>
+        </div>
+        <div class="highlight-card">
+          <h4><span class="dot"></span>安全可控的执行环境</h4>
+          <p>审批模式、YAML 规则、project_root 路径限制、bash namespace 四层分离——不是把所有安全逻辑堆在一层里。</p>
+        </div>
+        <div class="highlight-card">
+          <h4><span class="dot"></span>熟悉的 TUI 体验</h4>
+          <p>暖色主题对齐 Claude Code CLI，Thinking 流与最终回答视觉分离，语义着色区分路径、代码块与用户/助手消息。</p>
+        </div>
+        <div class="highlight-card">
+          <h4><span class="dot"></span>Go 生态原生</h4>
+          <p>纯 Go SQLite 驱动、Bubble Tea 组件化 TUI、colocated 单元测试 + integration 端到端测试。适合 Go 团队直接 fork 定制。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Quick Start -->
+<section id="quickstart">
+  <div class="container reveal">
+    <div class="section-label">Quick Start</div>
+    <h2 class="section-title">快速开始</h2>
+    <p class="section-desc">Go 1.22+，Linux 上可用 Namespace 沙箱。克隆仓库、配置 API Key、在项目目录启动即可。</p>
+
+    <div class="quickstart-grid">
+      <ol class="steps">
+        <li>
+          <h4>克隆并构建</h4>
+          <p>编译为单个静态二进制，可选安装到 PATH。</p>
+        </li>
+        <li>
+          <h4>配置 LLM 端点</h4>
+          <p>项目级 <code>.golem/config.yaml</code> 覆盖全局 <code>~/.golem/config.yaml</code>，支持环境变量占位符。</p>
+        </li>
+        <li>
+          <h4>进入项目目录启动</h4>
+          <p>你在哪个目录执行 golem，哪里就是 project_root。TUI 内 Shift+Tab 切换审批模式。</p>
+        </li>
+      </ol>
+
+      <div>
+        <div class="code-block">
+          <button class="copy-btn" data-copy="# install">复制</button>
+          <pre id="install"><span class="cm"># 安装</span>
+git clone https://github.com/liu-ethan/golem.git
+cd golem
+go build -o golem ./cmd/golem
+
+<span class="cm"># 配置 .golem/config.yaml</span>
+<span class="kw">provider</span>:
+  <span class="fn">base_url</span>: <span class="str">"https://api.anthropic.com"</span>
+  <span class="fn">api_key</span>: <span class="str">"${ANTHROPIC_API_KEY}"</span>
+  <span class="fn">model</span>: <span class="str">"claude-sonnet-4-5"</span>
+<span class="kw">defaults</span>:
+  <span class="fn">approval</span>: ask-before-edit
+  <span class="fn">sandbox</span>: workspace-write
+
+<span class="cm"># 启动</span>
+cd my-project
+./golem</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Usage -->
+<section id="usage">
+  <div class="container reveal">
+    <div class="section-label">Usage</div>
+    <h2 class="section-title">如何使用</h2>
+    <p class="section-desc">Bubble Tea 驱动的 TUI，流式渲染、工具调用卡片、审批确认——一切在终端内完成。</p>
+
+    <div class="usage-layout">
+      <div class="shot-tabs" role="tablist">
+        <button class="shot-tab active" data-shot="welcome" role="tab">
+          <span class="label">欢迎页</span>
+          <span class="desc">启动引导与快捷键</span>
+        </button>
+        <button class="shot-tab" data-shot="chat" role="tab">
+          <span class="label">对话界面</span>
+          <span class="desc">Thinking 流与状态栏</span>
+        </button>
+        <button class="shot-tab" data-shot="tools" role="tab">
+          <span class="label">工具执行</span>
+          <span class="desc">读写文件与审批确认</span>
+        </button>
+      </div>
+
+      <div class="shot-content">
+        <div class="shot-panel active" id="shot-welcome">
+          <div class="screenshot-frame">
+            <div class="frame-bar">
+              <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
+              <span class="frame-title">golem v0.1.0-dev</span>
+            </div>
+            <img src="pic/welcome_page.png" alt="golem 欢迎页界面">
+          </div>
+          <div class="shot-caption">
+            <strong>首次启动</strong> — 显示模型、sandbox 模式、常用斜杠命令提示。Enter 开始对话，q 退出。运行 /init 可生成 AGENTS.md 模板。
+          </div>
+        </div>
+        <div class="shot-panel" id="shot-chat">
+          <div class="screenshot-frame">
+            <div class="frame-bar">
+              <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
+              <span class="frame-title">golem — chat</span>
+            </div>
+            <img src="pic/ask_page.png" alt="golem 对话界面">
+          </div>
+          <div class="shot-caption">
+            <strong>状态栏</strong> — 显示 project_root、approval 模式、sandbox、session ID、Token 用量与模型名。Thinking 块与最终回答视觉分离，透明展示推理过程。
+          </div>
+        </div>
+        <div class="shot-panel" id="shot-tools">
+          <div class="screenshot-frame">
+            <div class="frame-bar">
+              <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
+              <span class="frame-title">golem — tool execution</span>
+            </div>
+            <img src="pic/thinking_page.png" alt="golem 工具执行界面">
+          </div>
+          <div class="shot-caption">
+            <strong>工具调用</strong> — read_file 自动执行，write_file 在 ask-before-edit 模式下弹确认。Diff 预览 inline 展示，Y/Enter 批准，n/Esc 拒绝。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cmd-grid">
+      <div class="cmd-item"><code>Shift+Tab</code><span>循环切换 approval 模式</span></div>
+      <div class="cmd-item"><code>/permissions</code><span>权限页：切换模式 + 查看 rules</span></div>
+      <div class="cmd-item"><code>/sessions</code><span>会话列表，点选 resume</span></div>
+      <div class="cmd-item"><code>/compact</code><span>手动触发 Layer 0 压缩</span></div>
+      <div class="cmd-item"><code>/context</code><span>可视化 context 占用</span></div>
+      <div class="cmd-item"><code>/diff</code><span>显示 working tree git diff</span></div>
+      <h4 style="grid-column:1/-1;font-size:15px;font-weight:600;margin-top:8px;">审批模式</h4>
+      <div class="cmd-item"><code>plan</code><span>只读探索，write/bash 直接拒绝</span></div>
+      <div class="cmd-item"><code>ask-before-edit</code><span>写操作前确认（默认推荐）</span></div>
+      <div class="cmd-item"><code>ask</code><span>任意 tool 执行前均弹确认</span></div>
+      <div class="cmd-item"><code>edit-automatically</code><span>全部自动执行</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- Architecture -->
+<section id="architecture" class="arch-section">
+  <div class="container reveal">
+    <div class="section-label">Architecture</div>
+    <h2 class="section-title">项目架构</h2>
+    <p class="section-desc">从用户输入到记忆提取的完整执行管道，安全层与审批层严格分离。</p>
+
+    <div class="arch-flow" id="archFlow">
+      <div class="arch-node" data-step="0">
+        <div class="name">用户输入</div>
+        <div class="detail">TUI 接收消息，加载会话历史</div>
+      </div>
+      <div class="arch-arrow"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l7 7-7 7M3 10h14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>
+      <div class="arch-node" data-step="1">
+        <div class="name">会话管理层</div>
+        <div class="detail">SQLite 读取历史 · BM25 检索 memory_facts · 注入 user_profile.md + top-K 记忆</div>
+      </div>
+      <div class="arch-arrow"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l7 7-7 7M3 10h14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>
+      <div class="arch-node" data-step="2">
+        <div class="name">Agent 主循环</div>
+        <div class="detail">LLM Streaming SSE → 解析 tool_use → 分发工具执行 → 循环直至完成</div>
+      </div>
+      <div class="arch-arrow"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l7 7-7 7M3 10h14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>
+      <div class="arch-node" data-step="3">
+        <div class="name">权限规则层</div>
+        <div class="detail">仅匹配 bash command · deny &gt; ask &gt; allow · deny 命中直接拒绝，不弹框</div>
+      </div>
+      <div class="arch-arrow"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l7 7-7 7M3 10h14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>
+      <div class="arch-node" data-step="4">
+        <div class="name">审批交互层</div>
+        <div class="detail">plan / ask-before-edit / ask / edit-automatically · Shift+Tab 或 /permissions 切换</div>
+      </div>
+      <div class="arch-arrow"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l7 7-7 7M3 10h14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>
+      <div class="arch-node" data-step="5">
+        <div class="name">沙箱 / 路径校验</div>
+        <div class="detail">bash namespace fork · 文件工具限制在 project_root 内</div>
+      </div>
+      <div class="arch-arrow"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3l7 7-7 7M3 10h14" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></div>
+      <div class="arch-node" data-step="6">
+        <div class="name">记忆提取层</div>
+        <div class="detail">会话结束同步提取 3–5 条事实 → SQLite · 每 3 次会话触发 Layer 2 合并</div>
+      </div>
+    </div>
+
+    <div class="tree-grid">
+      <div class="tree-block">
+        <h4>目录结构</h4>
+        <pre><span class="dir">golem/</span>
+├── <span class="dir">cmd/golem/</span>          <span class="cm"># CLI 入口</span>
+├── <span class="dir">internal/</span>
+│   ├── <span class="dir">llm/</span>            <span class="cm"># LLMClient + prompts/</span>
+│   ├── <span class="dir">agent/</span>          <span class="cm"># Agent 主循环</span>
+│   ├── <span class="dir">tools/</span>          <span class="cm"># 内置工具集</span>
+│   ├── <span class="dir">approval/</span>       <span class="cm"># 审批交互模式</span>
+│   ├── <span class="dir">rules/</span>          <span class="cm"># YAML 权限规则</span>
+│   ├── <span class="dir">sandbox/</span>        <span class="cm"># Linux Namespace</span>
+│   ├── <span class="dir">session/</span>        <span class="cm"># SQLite 会话</span>
+│   ├── <span class="dir">memory/</span>         <span class="cm"># 三层记忆 + BM25</span>
+│   └── <span class="dir">tui/</span>            <span class="cm"># Bubble Tea 界面</span>
+└── <span class="dir">.golem/</span>             <span class="cm"># 项目级配置</span>
+    ├── <span class="file">config.yaml</span>
+    ├── <span class="file">rules.yaml</span>
+    ├── <span class="file">user_profile.md</span>
+    └── <span class="dir">data/golem.db</span></pre>
+      </div>
+      <div class="tree-block">
+        <h4>记忆分层</h4>
+        <pre><span class="cm">Layer 0 · Working Memory</span>
+  当前会话 message history
+  context 达 80% 自动压缩
+
+<span class="cm">Layer 1 · Episodic Memory</span>
+  会话结束提取 3–5 条事实
+  BM25 检索 top-K 注入
+
+<span class="cm">Layer 2 · Semantic Memory</span>
+  每 3 次会话合并
+  → .golem/user_profile.md
+  始终注入 system prompt</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>golem — Go LLM Execution Model</p>
+    <p><a href="https://github.com/liu-ethan/golem" target="_blank" rel="noopener">github.com/liu-ethan/golem</a></p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  const nav = document.getElementById('nav');
+  const navLinks = document.querySelectorAll('.nav-links a');
+  const sections = document.querySelectorAll('section[id]');
+
+  window.addEventListener('scroll', () => {
+    nav.classList.toggle('scrolled', window.scrollY > 20);
+    let current = '';
+    sections.forEach(s => {
+      if (window.scrollY >= s.offsetTop - 100) current = s.id;
+    });
+    navLinks.forEach(a => {
+      a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+    });
+  }, { passive: true });
+
+  document.getElementById('menuToggle').addEventListener('click', () => {
+    document.getElementById('navLinks').classList.toggle('open');
+  });
+
+  document.querySelectorAll('.compare-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.compare-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.compare-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+    });
+  });
+
+  document.querySelectorAll('.shot-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.shot-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.shot-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('shot-' + tab.dataset.shot).classList.add('active');
+    });
+  });
+
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = document.querySelector(btn.dataset.copy);
+      const text = target.textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = '已复制';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = '复制'; btn.classList.remove('copied'); }, 2000);
+      });
+    });
+  });
+
+  const revealEls = document.querySelectorAll('.reveal');
+  const revealObs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.12 });
+  revealEls.forEach(el => revealObs.observe(el));
+
+  const archNodes = document.querySelectorAll('.arch-node, .arch-arrow');
+  const archObs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        archNodes.forEach((node, i) => {
+          setTimeout(() => node.classList.add('visible'), i * 80);
+        });
+        archObs.disconnect();
+      }
+    });
+  }, { threshold: 0.15 });
+  const archFlow = document.getElementById('archFlow');
+  if (archFlow) archObs.observe(archFlow);
+})();
+</script>
+</body>
+</html>

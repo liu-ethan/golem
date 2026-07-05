@@ -37,5 +37,6 @@ func Layer1SystemPrompt() string {
 ## 边界
 - 不要编造会话中未出现的信息。
 - 不要输出 category 以外的字段。
-- content 不要以「用户说」开头，直接陈述事实。`)
+- content 不要以「用户说」开头，直接陈述事实。
+- 若输入提供了 project_root，不得写入与会话或 project_root 不一致的绝对路径；无依据时不要猜测项目根目录。`)
 }

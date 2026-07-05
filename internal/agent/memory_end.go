@@ -20,6 +20,27 @@ func (c ChainEndHandler) OnSessionEnd(sessionID string, hadUserMessages bool) {
 	}
 }
 
+// OnSessionEndSnapshot 使用会话快照收尾；handler 未实现快照接口时回退为 OnSessionEnd。
+func (c ChainEndHandler) OnSessionEndSnapshot(snap SessionEndSnapshot) {
+	for _, h := range c {
+		if h == nil {
+			continue
+		}
+		switch sh := h.(type) {
+		case interface {
+			OnSessionEndSnapshot(snap SessionEndSnapshot)
+		}:
+			sh.OnSessionEndSnapshot(snap)
+		case interface {
+			OnSessionEndWithMessages(sessionID string, hadUserMessages bool, messages []llm.Message)
+		}:
+			sh.OnSessionEndWithMessages(snap.SessionID, snap.HadUserMessages, snap.Messages)
+		default:
+			h.OnSessionEnd(snap.SessionID, snap.HadUserMessages)
+		}
+	}
+}
+
 // SessionMessageSource 供会话结束时读取当前消息快照。
 type SessionMessageSource interface {
 	Messages() []llm.Message
@@ -45,12 +66,24 @@ func (m MemoryOnEnd) OnSessionEnd(sessionID string, hadUserMessages bool) {
 	if !hadUserMessages || m.LLM == nil || m.Store == nil || m.Source == nil {
 		return
 	}
+	m.runSessionEnd(sessionID, m.Source.Messages())
+}
+
+// OnSessionEndSnapshot 使用快照消息执行 Layer 1 情节记忆提取，供 /clear 异步收尾。
+func (m MemoryOnEnd) OnSessionEndSnapshot(snap SessionEndSnapshot) {
+	if !snap.HadUserMessages || m.LLM == nil || m.Store == nil || len(snap.Messages) == 0 {
+		return
+	}
+	m.runSessionEnd(snap.SessionID, snap.Messages)
+}
+
+func (m MemoryOnEnd) runSessionEnd(sessionID string, messages []llm.Message) {
 	ctx := context.Background()
 	_ = memory.OnSessionEnd(ctx, memory.SessionEndParams{
 		SessionID:   sessionID,
 		ProjectID:   m.Store.ProjectIDValue(),
 		ProjectRoot: m.ProjectRoot,
-		Messages:    m.Source.Messages(),
+		Messages:    messages,
 		Config:      m.MemoryCfg,
 		LLM:         m.LLM,
 		Store:       m.Store,
