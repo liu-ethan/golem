@@ -13,6 +13,7 @@ AGENTS.md
 # 构建产物
 /golem
 /golem.exe
+dist/
 
 # Go 覆盖率
 coverage.out
