@@ -13,6 +13,34 @@ import (
 	"github.com/tencent-docs/golem/internal/testutil"
 )
 
+func TestHandleChatKeyAllowsTypingWhileRunning(t *testing.T) {
+	m := testModel(t)
+	m.activePage = PageChat
+	m.running = true
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h', 'i'}})
+	m2 := next.(Model)
+	if m2.input != "hi" {
+		t.Fatalf("input = %q, want typing while running", m2.input)
+	}
+}
+
+func TestHandleChatKeyEnterQueuesWhileRunning(t *testing.T) {
+	m := testModel(t)
+	m.activePage = PageChat
+	m.running = true
+	m.input = "next question"
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 := next.(Model)
+	if m2.input != "" {
+		t.Fatalf("input should clear after queue, got %q", m2.input)
+	}
+	if len(m2.inputQueue) != 1 || m2.inputQueue[0] != "next question" {
+		t.Fatalf("inputQueue = %v", m2.inputQueue)
+	}
+}
+
 func TestModelShiftTabCyclesApproval(t *testing.T) {
 	root := testutil.TempProjectRoot(t)
 	mock := testutil.NewMockLLM()

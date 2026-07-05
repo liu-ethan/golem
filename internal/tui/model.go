@@ -134,6 +134,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 
+	case tea.FocusMsg:
+		m.showCursor = true
+		return m, blinkCursor()
+
+	case tea.ResumeMsg:
+		m.showCursor = true
+		return m, blinkCursor()
+
 	case agentEventMsg:
 		if m.running {
 			m.handleAgentEvent(agent.Event(msg))
@@ -313,13 +321,21 @@ func (m Model) handleChatKey(msg tea.KeyMsg, key string) (Model, tea.Cmd) {
 			m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: "（已取消当前轮次）"})
 			return m, nil
 		}
+		if key == "enter" {
+			if strings.TrimSpace(m.input) != "" {
+				m.inputQueue = append(m.inputQueue, m.input)
+				m.input = ""
+				m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: "（已排队下一条输入）"})
+			}
+			return m, nil
+		}
 		if key == "tab" && strings.TrimSpace(m.input) != "" {
 			m.inputQueue = append(m.inputQueue, m.input)
 			m.input = ""
 			m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: "（已排队下一条输入）"})
 			return m, nil
 		}
-		return m, nil
+		// Agent 流式/等待中仍允许编辑输入框，避免切回终端后误以为卡住。
 	}
 
 	if key == "ctrl+l" {

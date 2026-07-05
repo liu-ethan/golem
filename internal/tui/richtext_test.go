@@ -40,6 +40,53 @@ func TestRenderRichTextFencedBlock(t *testing.T) {
 	}
 }
 
+func TestNormalizeMarkdownTablePadding(t *testing.T) {
+	in := "| 函数                | 时间复杂度 | 空间复杂度 | 说明                                |\n| ------------------- | ---------- | ---------- | ----------------------------------- |\n| twoSum              | O(n)       | O(n)       | **推荐**，哈希表一趟扫描            |"
+	out := renderRichText(in, style.AsstText)
+	plain := stripVisible(out)
+	if strings.Contains(plain, "              ") {
+		t.Fatalf("table padding not collapsed: %s", plain)
+	}
+	if !strings.Contains(plain, "twoSum │ O(n) │ O(n)") {
+		t.Fatalf("expected compact table row: %s", plain)
+	}
+	if strings.Contains(plain, "---") {
+		t.Fatal("table separator row should be omitted")
+	}
+}
+
+func TestNormalizeMarkdownHeaderAndHR(t *testing.T) {
+	in := "---\n\n### 文件概览\n\n内容"
+	out := renderRichText(in, style.AsstText)
+	plain := stripVisible(out)
+	if strings.Contains(plain, "###") {
+		t.Fatalf("header marker should be stripped: %s", plain)
+	}
+	if !strings.Contains(plain, "文件概览") {
+		t.Fatal("expected header text")
+	}
+	if strings.Contains(plain, "---") {
+		t.Fatal("horizontal rule should be omitted")
+	}
+}
+
+func TestNormalizeTrailingWhitespace(t *testing.T) {
+	out := renderRichText("hello world   \nfoo", style.AsstText)
+	if strings.Contains(stripVisible(out), "world   ") {
+		t.Fatalf("trailing spaces should be trimmed: %q", stripVisible(out))
+	}
+}
+
+func TestRenderRichTextBold(t *testing.T) {
+	out := renderRichText("这是 **推荐** 方案", style.AsstText)
+	if strings.Contains(stripVisible(out), "**") {
+		t.Fatalf("bold markers should be stripped: %s", stripVisible(out))
+	}
+	if !strings.Contains(stripVisible(out), "推荐") {
+		t.Fatal("expected bold text content")
+	}
+}
+
 func TestSplitFencedCode(t *testing.T) {
 	parts := splitFencedCode("a ```txt\nline\n``` b")
 	if len(parts) != 3 {
@@ -50,13 +97,11 @@ func TestSplitFencedCode(t *testing.T) {
 	}
 }
 
-func TestRenderRichTextPreservesColumnWidth(t *testing.T) {
-	line := "  /status                   显示 model / approval / sandbox / session / tokens"
-	base := style.SysText
-	plainW := lipgloss.Width(base.Render(line))
-	richW := lipgloss.Width(renderRichText(line, base))
-	if plainW != richW {
-		t.Fatalf("width mismatch plain=%d rich=%d", plainW, richW)
+func TestRenderRichTextTrimsTrailingPadding(t *testing.T) {
+	line := "hello                   "
+	out := renderRichText(line, style.SysText)
+	if strings.HasSuffix(stripVisible(out), " ") {
+		t.Fatalf("trailing padding should be trimmed: %q", stripVisible(out))
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 
 // Run 启动 Bubble Tea TUI，阻塞直到用户退出。
 func Run(cfg Config) error {
-	return runProgram(cfg, tea.WithAltScreen())
+	return runProgram(cfg, tea.WithAltScreen(), tea.WithReportFocus())
 }
 
 // finalizeSession 在 TUI 退出后执行会话收尾（持久化、Layer 1 记忆提取等）。
@@ -25,6 +25,7 @@ func runProgram(cfg Config, opts ...tea.ProgramOption) error {
 	model := &m
 	p := tea.NewProgram(model, opts...)
 	model.SetProgram(p)
+	setupJobControl(p)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)
 	}
@@ -37,7 +38,7 @@ func runProgram(cfg Config, opts ...tea.ProgramOption) error {
 
 // RunWithOptions 允许测试注入 tea.ProgramOption（如 WithoutRenderer）。
 func RunWithOptions(cfg Config, opts ...tea.ProgramOption) error {
-	allOpts := append([]tea.ProgramOption{tea.WithAltScreen()}, opts...)
+	allOpts := append([]tea.ProgramOption{tea.WithAltScreen(), tea.WithReportFocus()}, opts...)
 	return runProgram(cfg, allOpts...)
 }
 

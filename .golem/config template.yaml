@@ -1,0 +1,15 @@
+provider:
+  base_url: ""
+  api_key: ""                                     # 或 ${ANTHROPIC_API_KEY}
+  model: ""
+  context_limit: 200000                           # TUI 分母 & Layer 0 阈值，默认 200k
+
+defaults:
+  approval: ask-before-edit    # plan | ask-before-edit | ask | edit-automatically
+  sandbox: workspace-write
+
+memory:
+  layer2_session_threshold: 3
+  bm25_top_k: 5
+  compact_batch_size: 10                          # Layer 0 每次压缩消息条数
+  compact_threshold: 0.8                          # 会话累计 input tokens 达 context_limit × 0.8 触发

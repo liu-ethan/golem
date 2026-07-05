@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/tencent-docs/golem/internal/agent"
 	"github.com/tencent-docs/golem/internal/approval"
 	"github.com/tencent-docs/golem/internal/memory"
 	"github.com/tencent-docs/golem/internal/sandbox"
@@ -593,11 +593,46 @@ func (m Model) runLayer2Manual() tea.Cmd {
 }
 
 func (m Model) openExternalEditor() tea.Cmd {
-	initial := m.input
-	return func() tea.Msg {
-		text, err := agent.OpenExternalEditor(initial)
-		return editorDoneMsg{text: text, err: err}
+	path, err := writeEditorTemp(m.input)
+	if err != nil {
+		return func() tea.Msg {
+			return editorDoneMsg{err: err}
+		}
 	}
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
+	return tea.ExecProcess(exec.Command(editor, path), func(runErr error) tea.Msg {
+		defer os.Remove(path)
+		if runErr != nil {
+			return editorDoneMsg{err: runErr}
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return editorDoneMsg{err: err}
+		}
+		return editorDoneMsg{text: strings.TrimSpace(string(data))}
+	})
+}
+
+// writeEditorTemp 将初始内容写入临时文件，供外部编辑器打开。
+func writeEditorTemp(initial string) (string, error) {
+	tmp, err := os.CreateTemp("", "golem-edit-*.md")
+	if err != nil {
+		return "", err
+	}
+	path := tmp.Name()
+	if _, err := tmp.WriteString(initial); err != nil {
+		tmp.Close()
+		os.Remove(path)
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(path)
+		return "", err
+	}
+	return path, nil
 }
 
 func (m Model) retryDenied(entry session.DenialEntry) tea.Cmd {

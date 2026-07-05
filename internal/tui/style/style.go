@@ -22,6 +22,8 @@ const (
 	ColorThinkTitle  = "217" // Thinking 标题
 	ColorSuccess     = "150" // 成功
 	ColorError       = "203" // 错误
+	ColorDiffAdd     = "114" // diff 新增行（git 浅绿）
+	ColorDiffDel     = "203" // diff 删除行（git 红）
 	ColorWarning     = "214" // 警告
 	ColorInfo        = "117" // 信息
 	ColorCursor      = "215" // 输入光标
@@ -67,6 +69,8 @@ var (
 	Rule      = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorFGDefault))
 	Success   = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSuccess))
 	Warning   = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorWarning))
+	DiffAdd   = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDiffAdd))
+	DiffDel   = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDiffDel))
 	WelcomeBorder = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(ColorAccent))

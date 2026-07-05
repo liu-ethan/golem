@@ -42,7 +42,7 @@ func renderView(m Model) string {
 
 	if m.confirm != nil {
 		body.WriteString("\n")
-		body.WriteString(renderConfirmBox(m.confirm, width))
+		body.WriteString(renderConfirmBox(m.confirm, width, m.projectRoot))
 	}
 
 	body.WriteString("\n")
@@ -122,7 +122,7 @@ func renderFooter(m Model, slashActive bool) string {
 		if slashActive {
 			hints = "[↑↓] 选择  [Tab] 补全  [Enter] 运行  [/] 命令"
 		} else if m.running {
-			hints = "[Ctrl+C] 取消  [Tab] 排队输入"
+			hints = "[Ctrl+C] 取消  [Enter] 排队  [输入] 可继续编辑"
 		} else {
 			hints = "[Enter] 发送  [/] 命令  [Shift+Tab] approval  [Ctrl+L] 清屏  [?] /help"
 		}
@@ -171,7 +171,7 @@ func renderChatArea(m Model, width int) string {
 			b.WriteString(style.SysText.Render(line.Text))
 			b.WriteString("\n")
 		case LineTool:
-			b.WriteString(formatToolCard(line, width))
+			b.WriteString(formatToolCard(line, width, m.projectRoot))
 			b.WriteString("\n")
 		}
 	}
@@ -292,12 +292,12 @@ func renderSlashSuggestions(suggestions []SlashSuggestion, sel int, width int) s
 	return b.String()
 }
 
-func renderConfirmBox(c *ConfirmState, width int) string {
+func renderConfirmBox(c *ConfirmState, width int, projectRoot string) string {
 	line := ChatLine{
 		Kind:      LineTool,
 		ToolName:  c.ToolName,
 		ToolInput: c.Input,
 		ToolState: ToolConfirm,
 	}
-	return formatToolCard(line, width)
+	return formatToolCard(line, width, projectRoot)
 }

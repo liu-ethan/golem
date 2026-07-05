@@ -374,7 +374,7 @@ func shortID(id string) string {
 }
 
 // formatToolCard 渲染单张工具卡片文本（供 view 与测试使用）。
-func formatToolCard(line ChatLine, width int) string {
+func formatToolCard(line ChatLine, width int, projectRoot string) string {
 	if width < 20 {
 		width = 20
 	}
@@ -384,10 +384,14 @@ func formatToolCard(line ChatLine, width int) string {
 	b.WriteString(" ")
 	b.WriteString(style.Border.Render(strings.Repeat("─", max(0, width-len(line.ToolName)-10))))
 	b.WriteString("\n")
-	if detail := formatToolInput(line.ToolInput); detail != "" {
-		b.WriteString("│ ")
-		b.WriteString(renderRichText(truncateRunes(detail, width-4), style.Muted))
-		b.WriteString("\n")
+	if detail := formatToolDetail(line.ToolName, line.ToolInput, projectRoot, width); detail != "" {
+		b.WriteString(detail)
+		if !strings.HasSuffix(detail, "\n") {
+			b.WriteString("\n")
+		}
+	}
+	if line.ToolName == "bash" && line.ToolState == ToolDone {
+		b.WriteString(formatBashOutput(line.ToolOutput, line.ToolError, width))
 	}
 	switch line.ToolState {
 	case ToolRunning:
@@ -397,7 +401,13 @@ func formatToolCard(line ChatLine, width int) string {
 	case ToolDenied:
 		b.WriteString("│ " + style.ErrText.Render("[已拒绝] "+truncateRunes(line.ToolOutput, width-12)) + "\n")
 	case ToolDone:
-		if line.ToolError {
+		if line.ToolName == "bash" {
+			if line.ToolError {
+				b.WriteString("│ " + style.ErrText.Render("[✗ 执行失败]") + "\n")
+			} else {
+				b.WriteString("│ " + style.Success.Render("[✓ 已执行]") + "\n")
+			}
+		} else if line.ToolError {
 			b.WriteString("│ " + style.ErrText.Render("[错误] "+truncateRunes(line.ToolOutput, width-10)) + "\n")
 		} else {
 			b.WriteString("│ " + style.Success.Render("[✓ 已执行]") + "\n")
