@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assert/icon.png" alt="golem" width="96">
+
 # golem
 
 **Go LLM Execution Model** — Go 原生的 AI 编程 Agent CLI
@@ -103,8 +105,8 @@
 |------|--------|
 | Linux x86_64 | `golem-linux-amd64` |
 | Windows x86_64 | `golem-windows-amd64.exe` |
-| macOS Intel | `golem-darwin-amd64` |
-| macOS Apple Silicon | `golem-darwin-arm64` |
+| macOS Intel | `golem-macos-amd64` |
+| macOS Apple Silicon | `golem-macos-arm64` |
 
 ```bash
 # 示例：Linux

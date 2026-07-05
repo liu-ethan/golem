@@ -17,7 +17,9 @@ LDFLAGS="-s -w -X main.version=${VERSION}"
 
 build() {
 	local goos=$1 goarch=$2 ext=$3
-	local name="golem-${goos}-${goarch}"
+	local platform=$goos
+	[[ "$goos" == darwin ]] && platform=macos
+	local name="golem-${platform}-${goarch}"
 	echo "building ${name}${ext}..."
 	CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
 		go build -ldflags "$LDFLAGS" -o "${OUT_DIR}/${name}${ext}" ./cmd/golem

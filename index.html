@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>golem — Go LLM Execution Model</title>
   <meta name="description" content="用 Go 构建的轻量级 AI 编程 Agent CLI。分层记忆、声明式权限、审批交互，对齐 Claude Code / Codex 体验。">
+  <link rel="icon" href="assert/icon.png" type="image/png">
+  <link rel="apple-touch-icon" href="assert/icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -93,15 +95,11 @@
       letter-spacing: -0.02em;
     }
     .nav-brand .mark {
-      width: 28px; height: 28px;
-      background: var(--accent);
+      width: 28px;
+      height: 28px;
       border-radius: 7px;
-      display: grid;
-      place-items: center;
-      font-family: var(--font-mono);
-      font-size: 13px;
-      font-weight: 600;
-      color: #fff;
+      object-fit: cover;
+      flex-shrink: 0;
     }
     .nav-links {
       display: flex;
@@ -726,7 +724,7 @@
 <nav class="nav" id="nav">
   <div class="nav-inner">
     <a href="#" class="nav-brand">
-      <span class="mark">G</span>
+      <img src="assert/icon.png" alt="" class="mark" width="28" height="28">
       golem
     </a>
     <ul class="nav-links" id="navLinks">
