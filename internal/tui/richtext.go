@@ -13,6 +13,23 @@ var (
 	pathRe       = regexp.MustCompile(`(?:^|[\s(])((?:\./[\w./@-]+|/[\w][\w./@-]*|~/?[\w][\w./@-]*)|[\w./@-]+\.(?:go|py|js|ts|tsx|jsx|md|yaml|yml|json|toml|sh|rs|txt|mod|sum|lock|sql|css|html|xml|csv|env|gitignore|dockerfile|makefile|golem)(?:/[\w./@-]+)?)\b`)
 )
 
+// renderUserText 渲染用户消息：斜杠命令词用次强调色，其余正文走 UserText 语义色。
+func renderUserText(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if strings.HasPrefix(trimmed, "/") {
+		fields := strings.Fields(trimmed)
+		if len(fields) > 0 {
+			var b strings.Builder
+			b.WriteString(style.UserSlash.Render(fields[0]))
+			if len(fields) > 1 {
+				b.WriteString(style.UserText.Render(" " + strings.Join(fields[1:], " ")))
+			}
+			return b.String()
+		}
+	}
+	return renderRichText(text, style.UserText)
+}
+
 // renderRichText 为聊天正文添加语义着色：行内代码、路径、围栏代码块。
 func renderRichText(text string, base lipgloss.Style) string {
 	if text == "" {

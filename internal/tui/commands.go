@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/tencent-docs/golem/internal/approval"
@@ -148,8 +150,7 @@ func dispatchSlash(input string, loader *skills.Loader) slashResult {
 		return slashResult{handled: true, quit: true}
 	default:
 		if loader != nil && !isSlashCommandName(cmd) {
-			if skill, err := loader.LoadByName(cmd); err == nil {
-				query := strings.TrimSpace(strings.Join(args, " "))
+			if skill, query, ok := matchSkillSlash(raw, loader); ok {
 				if query == "" {
 					return slashResult{
 						handled: true,
@@ -161,6 +162,68 @@ func dispatchSlash(input string, loader *skills.Loader) slashResult {
 		}
 		return slashResult{handled: true, message: fmt.Sprintf("未知命令: /%s（输入 /help 查看）", cmd)}
 	}
+}
+
+// matchSkillSlash 从斜杠输入解析 Skill 与提问文本，支持含空格的 Skill 名与目录 slug。
+func matchSkillSlash(raw string, loader *skills.Loader) (skills.Skill, string, bool) {
+	if loader == nil {
+		return skills.Skill{}, "", false
+	}
+	raw = strings.TrimSpace(raw)
+	if !strings.HasPrefix(raw, "/") {
+		return skills.Skill{}, "", false
+	}
+	body := strings.TrimSpace(strings.TrimPrefix(raw, "/"))
+	if body == "" {
+		return skills.Skill{}, "", false
+	}
+	list, err := loader.List()
+	if err != nil {
+		return skills.Skill{}, "", false
+	}
+	sort.Slice(list, func(i, j int) bool {
+		li := len(list[i].Name)
+		if slug := skillDirSlug(list[i]); slug != "" && len(slug) > li {
+			li = len(slug)
+		}
+		lj := len(list[j].Name)
+		if slug := skillDirSlug(list[j]); slug != "" && len(slug) > lj {
+			lj = len(slug)
+		}
+		return li > lj
+	})
+	bodyLower := strings.ToLower(body)
+	for _, s := range list {
+		for _, key := range skillSlashKeys(s) {
+			keyLower := strings.ToLower(key)
+			if bodyLower == keyLower {
+				return s, "", true
+			}
+			prefix := keyLower + " "
+			if strings.HasPrefix(bodyLower, prefix) {
+				query := strings.TrimSpace(body[len(key):])
+				return s, query, true
+			}
+		}
+	}
+	return skills.Skill{}, "", false
+}
+
+// skillDirSlug 返回 Skill 目录名，供 /tui-design 等形式调用。
+func skillDirSlug(s skills.Skill) string {
+	if s.Dir == "" {
+		return ""
+	}
+	return filepath.Base(s.Dir)
+}
+
+// skillSlashKeys 返回可用于斜杠调用的 Skill 标识（显示名 + 目录 slug）。
+func skillSlashKeys(s skills.Skill) []string {
+	keys := []string{s.Name}
+	if slug := skillDirSlug(s); slug != "" && !strings.EqualFold(slug, s.Name) {
+		keys = append(keys, slug)
+	}
+	return keys
 }
 
 // normalizeApprovalMode 将用户输入映射为合法 approval 模式名。

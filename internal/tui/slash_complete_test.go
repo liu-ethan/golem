@@ -108,3 +108,24 @@ func TestDispatchSlashCommandWinsOverSkillName(t *testing.T) {
 		t.Fatalf("help should be command not skill: %+v", r)
 	}
 }
+
+func TestSlashSuggestionViewport(t *testing.T) {
+	tests := []struct {
+		sel, total, max      int
+		wantStart, wantEnd   int
+	}{
+		{0, 22, 8, 0, 8},
+		{7, 22, 8, 0, 8},
+		{8, 22, 8, 1, 9},
+		{10, 22, 8, 3, 11},
+		{21, 22, 8, 14, 22},
+		{0, 5, 8, 0, 5},
+	}
+	for _, tc := range tests {
+		start, end := slashSuggestionViewport(tc.sel, tc.total, tc.max)
+		if start != tc.wantStart || end != tc.wantEnd {
+			t.Errorf("viewport(sel=%d total=%d max=%d) = (%d,%d), want (%d,%d)",
+				tc.sel, tc.total, tc.max, start, end, tc.wantStart, tc.wantEnd)
+		}
+	}
+}

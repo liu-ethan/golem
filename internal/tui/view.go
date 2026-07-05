@@ -104,6 +104,10 @@ func renderStatusBar(s StatusBar) string {
 
 // renderFooter 渲染底部快捷键提示栏。
 func renderFooter(m Model, slashActive bool) string {
+	if m.confirm != nil {
+		hints := fmt.Sprintf("[Y/Enter] 允许  [n/Esc] 拒绝  — 工具: %s", m.confirm.ToolName)
+		return style.Footer.Width(m.width).Render(hints)
+	}
 	var hints string
 	switch m.activePage {
 	case PagePermissions:
@@ -153,7 +157,7 @@ func renderChatArea(m Model, width int) string {
 		switch line.Kind {
 		case LineUser:
 			b.WriteString(style.UserLabel.Render("  You "))
-			b.WriteString(renderRichText(line.Text, style.UserText))
+			b.WriteString(renderUserText(line.Text))
 			b.WriteString("\n")
 		case LineAssistant:
 			b.WriteString(style.AsstLabel.Render("  Golem "))
@@ -201,14 +205,26 @@ func renderChatHome(m Model, width int) string {
 	return strings.Repeat("\n", padTop) + boxed + "\n"
 }
 
+const (
+	thinkingTitlePrefix = "  ┌─ Thinking "
+	thinkingBoxMaxWidth = 72
+)
+
 // renderThinkingBlock 渲染思考过程区块，与最终答案视觉分离。
 func renderThinkingBlock(text string, width int, streaming bool) string {
 	if width < 20 {
 		width = 20
 	}
-	inner := width - 6
-	title := style.ThinkTitle.Render("  ┌─ Thinking ")
-	border := style.Border.Render(strings.Repeat("─", max(0, inner-len("Thinking ")-2)))
+	boxWidth := width
+	if boxWidth > thinkingBoxMaxWidth {
+		boxWidth = thinkingBoxMaxWidth
+	}
+	inner := boxWidth - 6
+	titleWidth := len([]rune(thinkingTitlePrefix))
+	// 顶栏与底栏同宽：titleWidth + topDash + 1 = 3 + inner + 1
+	topDash := max(0, inner-titleWidth+3)
+	title := style.ThinkTitle.Render(thinkingTitlePrefix)
+	border := style.Border.Render(strings.Repeat("─", topDash))
 	var b strings.Builder
 	b.WriteString(title)
 	b.WriteString(border)
@@ -230,21 +246,28 @@ func renderThinkingBlock(text string, width int, streaming bool) string {
 
 // renderSlashSuggestions 渲染斜杠命令补全下拉列表。
 func renderSlashSuggestions(suggestions []SlashSuggestion, sel int, width int) string {
-	if sel < 0 || sel >= len(suggestions) {
+	if len(suggestions) == 0 {
+		return ""
+	}
+	if sel < 0 {
 		sel = 0
+	}
+	if sel >= len(suggestions) {
+		sel = len(suggestions) - 1
 	}
 	descWidth := 28
 	if width > 80 {
 		descWidth = 36
 	}
+	start, end := slashSuggestionViewport(sel, len(suggestions), slashSuggestionMaxVisible)
 	var b strings.Builder
 	b.WriteString(style.Muted.Render("  命令与 Skill 补全"))
 	b.WriteString("\n")
-	maxShow := 8
-	if len(suggestions) < maxShow {
-		maxShow = len(suggestions)
+	if start > 0 {
+		b.WriteString(style.SlashDesc.Render(fmt.Sprintf("  … 上方 %d 条", start)))
+		b.WriteString("\n")
 	}
-	for i := 0; i < maxShow; i++ {
+	for i := start; i < end; i++ {
 		cmd := suggestions[i]
 		name := "/" + cmd.Name
 		pad := 16 - len(cmd.Name)
@@ -262,8 +285,8 @@ func renderSlashSuggestions(suggestions []SlashSuggestion, sel int, width int) s
 		}
 		b.WriteString("\n")
 	}
-	if len(suggestions) > maxShow {
-		b.WriteString(style.SlashDesc.Render(fmt.Sprintf("  … 还有 %d 条", len(suggestions)-maxShow)))
+	if end < len(suggestions) {
+		b.WriteString(style.SlashDesc.Render(fmt.Sprintf("  … 下方 %d 条", len(suggestions)-end)))
 		b.WriteString("\n")
 	}
 	return b.String()

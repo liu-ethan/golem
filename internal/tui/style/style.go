@@ -37,8 +37,10 @@ var (
 		Background(lipgloss.Color(ColorBGSurface)).
 		Padding(0, 1)
 	Prompt = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorAccent))
-	UserLabel = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorUser))
+	// UserLabel 用 accent.primary，UserText 用暖沙色正文，与助手白字形成层级。
+	UserLabel = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorAccent))
 	UserText  = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorUser))
+	UserSlash = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorAccentAlt))
 	AsstLabel = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorAccentAlt))
 	AsstText  = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorAssistant))
 	ThinkBody = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorThinking)).Italic(true)

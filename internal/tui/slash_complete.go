@@ -14,6 +14,30 @@ type SlashSuggestion struct {
 	Desc string
 }
 
+const slashSuggestionMaxVisible = 8
+
+// slashSuggestionViewport 根据选中项计算补全列表可见窗口 [start,end)。
+func slashSuggestionViewport(sel, total, maxVisible int) (start, end int) {
+	if total <= 0 {
+		return 0, 0
+	}
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
+	if total <= maxVisible {
+		return 0, total
+	}
+	start = 0
+	if sel >= maxVisible {
+		start = sel - maxVisible + 1
+	}
+	maxStart := total - maxVisible
+	if start > maxStart {
+		start = maxStart
+	}
+	return start, start + maxVisible
+}
+
 // slashCommandCatalog 列出所有可补全斜杠命令及其说明。
 var slashCommandCatalog = []SlashSuggestion{
 	{Name: "help", Desc: "列出命令与快捷键"},

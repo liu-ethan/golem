@@ -1,10 +1,14 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/tencent-docs/golem/internal/approval"
+	"github.com/tencent-docs/golem/internal/skills"
+	"github.com/tencent-docs/golem/internal/testutil"
 )
 
 func TestParseSlashCommand(t *testing.T) {
@@ -139,5 +143,64 @@ func TestApprovalValidateMode(t *testing.T) {
 	}
 	if err := approvalValidateMode("bogus"); err == nil {
 		t.Fatal("expected error for bogus mode")
+	}
+}
+
+func writeTestSkill(t *testing.T, root, dirName, title string) *skills.Loader {
+	t.Helper()
+	skillDir := filepath.Join(root, ".golem", "skills", dirName)
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# " + title + "\n\nUse this skill for testing.\n"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return skills.NewLoader(root)
+}
+
+func TestDispatchSlashMultiWordSkillName(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	loader := writeTestSkill(t, root, "tui-design", "TUI Design System")
+
+	r := dispatchSlash("/TUI Design System 帮我设计配色", loader)
+	if !r.handled || r.runSkill != "TUI Design System" || r.skillQuery != "帮我设计配色" {
+		t.Fatalf("result = %+v", r)
+	}
+}
+
+func TestDispatchSlashMultiWordSkillRequiresQuery(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	loader := writeTestSkill(t, root, "tui-design", "TUI Design System")
+
+	r := dispatchSlash("/TUI Design System", loader)
+	if !r.handled || r.runSkill != "" || !strings.Contains(r.message, "用法") {
+		t.Fatalf("result = %+v", r)
+	}
+}
+
+func TestDispatchSlashSkillResolvedFromPartialSelection(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	loader := writeTestSkill(t, root, "tui-design", "TUI Design System")
+
+	suggestions := matchSlashSuggestions("/tui", loader)
+	resolved := resolveSlashInput("/tui", 0, suggestions)
+	if resolved != "/TUI Design System" {
+		t.Fatalf("resolved = %q", resolved)
+	}
+
+	r := dispatchSlash(resolved, loader)
+	if !r.handled || !strings.Contains(r.message, "用法") {
+		t.Fatalf("result = %+v", r)
+	}
+}
+
+func TestDispatchSlashSkillDirSlug(t *testing.T) {
+	root := testutil.TempProjectRoot(t)
+	loader := writeTestSkill(t, root, "tui-design", "TUI Design System")
+
+	r := dispatchSlash("/tui-design 设计输入框颜色", loader)
+	if !r.handled || r.runSkill != "TUI Design System" || r.skillQuery != "设计输入框颜色" {
+		t.Fatalf("result = %+v", r)
 	}
 }

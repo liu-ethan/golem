@@ -47,6 +47,28 @@ type compactDoneMsg struct {
 	err     error
 }
 
+// bindRunConfirm 为当前 Agent 轮次注册工具确认回调；须在启动 goroutine 之前同步调用。
+func (m *Model) bindRunConfirm(ctx context.Context) {
+	confirm := func(toolName string, input map[string]any) (bool, error) {
+		resp := make(chan bool, 1)
+		if m.program == nil {
+			return false, fmt.Errorf("tui program not initialized")
+		}
+		m.program.Send(confirmRequestMsg{
+			toolName: toolName,
+			input:    input,
+			resp:     resp,
+		})
+		select {
+		case ok := <-resp:
+			return ok, nil
+		case <-ctx.Done():
+			return false, ctx.Err()
+		}
+	}
+	m.agent.SetConfirm(confirm)
+}
+
 // startAgentRun 在 goroutine 中执行 Agent.HandleInput，通过 program.Send 推送事件。
 func (m *Model) startAgentRun(input string) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -55,6 +77,8 @@ func (m *Model) startAgentRun(input string) {
 	m.streaming = ""
 	m.thinkingStreaming = ""
 	m.streamStarted = false
+	m.errMsg = ""
+	m.bindRunConfirm(ctx)
 
 	go func() {
 		handler := func(evt agent.Event) {
@@ -62,23 +86,6 @@ func (m *Model) startAgentRun(input string) {
 				m.program.Send(agentEventMsg(evt))
 			}
 		}
-		confirm := func(toolName string, input map[string]any) (bool, error) {
-			resp := make(chan bool, 1)
-			if m.program != nil {
-				m.program.Send(confirmRequestMsg{
-					toolName: toolName,
-					input:    input,
-					resp:     resp,
-				})
-			}
-			select {
-			case ok := <-resp:
-				return ok, nil
-			case <-ctx.Done():
-				return false, ctx.Err()
-			}
-		}
-		m.agent.SetConfirm(confirm)
 
 		_, err := m.agent.HandleInput(ctx, input, handler)
 		if err != nil && ctx.Err() != nil {
@@ -98,6 +105,8 @@ func (m *Model) startAgentPlan(input string) {
 	m.streaming = ""
 	m.thinkingStreaming = ""
 	m.streamStarted = false
+	m.errMsg = ""
+	m.bindRunConfirm(ctx)
 
 	go func() {
 		handler := func(evt agent.Event) {
@@ -105,23 +114,6 @@ func (m *Model) startAgentPlan(input string) {
 				m.program.Send(agentEventMsg(evt))
 			}
 		}
-		confirm := func(toolName string, input map[string]any) (bool, error) {
-			resp := make(chan bool, 1)
-			if m.program != nil {
-				m.program.Send(confirmRequestMsg{
-					toolName: toolName,
-					input:    input,
-					resp:     resp,
-				})
-			}
-			select {
-			case ok := <-resp:
-				return ok, nil
-			case <-ctx.Done():
-				return false, ctx.Err()
-			}
-		}
-		m.agent.SetConfirm(confirm)
 		err := m.agent.RunPlanOnce(ctx, input, handler)
 		if err != nil && ctx.Err() != nil {
 			err = ctx.Err()
@@ -154,6 +146,8 @@ func (m *Model) startAgentSkill(skillName, query string) {
 	m.streaming = ""
 	m.thinkingStreaming = ""
 	m.streamStarted = false
+	m.errMsg = ""
+	m.bindRunConfirm(ctx)
 
 	go func() {
 		handler := func(evt agent.Event) {
@@ -161,23 +155,6 @@ func (m *Model) startAgentSkill(skillName, query string) {
 				m.program.Send(agentEventMsg(evt))
 			}
 		}
-		confirm := func(toolName string, input map[string]any) (bool, error) {
-			resp := make(chan bool, 1)
-			if m.program != nil {
-				m.program.Send(confirmRequestMsg{
-					toolName: toolName,
-					input:    input,
-					resp:     resp,
-				})
-			}
-			select {
-			case ok := <-resp:
-				return ok, nil
-			case <-ctx.Done():
-				return false, ctx.Err()
-			}
-		}
-		m.agent.SetConfirm(confirm)
 		err := m.agent.RunSkillOnce(ctx, skill, query, handler)
 		if err != nil && ctx.Err() != nil {
 			err = ctx.Err()
@@ -231,7 +208,7 @@ func (m *Model) handleAgentEvent(evt agent.Event) {
 func (m *Model) handleAgentDone(msg agentDoneMsg) {
 	m.running = false
 	m.runCancel = nil
-	m.agent.SetConfirm(nil)
+	m.confirm = nil
 	m.flushThinking()
 	m.flushStreaming()
 	m.syncStatus()
@@ -242,6 +219,8 @@ func (m *Model) handleAgentDone(msg agentDoneMsg) {
 			Kind: LineSystem,
 			Text: "Error: " + msg.err.Error(),
 		})
+	} else {
+		m.errMsg = ""
 	}
 	if msg.err == nil || msg.err == context.Canceled {
 		_ = syncMessages(m.store, m.agent)
@@ -358,6 +337,22 @@ func rebuildChatFromMessages(msgs []llm.Message) []ChatLine {
 		}
 	}
 	return lines
+}
+
+func (m *Model) upsertToolConfirmLine(name string, input map[string]any) {
+	for i := len(m.lines) - 1; i >= 0; i-- {
+		if m.lines[i].Kind == LineTool && m.lines[i].ToolName == name {
+			m.lines[i].ToolInput = cloneMap(input)
+			m.lines[i].ToolState = ToolConfirm
+			return
+		}
+	}
+	m.lines = append(m.lines, ChatLine{
+		Kind:      LineTool,
+		ToolName:  name,
+		ToolInput: cloneMap(input),
+		ToolState: ToolConfirm,
+	})
 }
 
 func cloneMap(in map[string]any) map[string]any {

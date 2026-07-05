@@ -76,7 +76,7 @@ type retryDoneMsg struct {
 	err  error
 }
 
-func (m Model) applySlash(r slashResult) (Model, tea.Cmd) {
+func (m Model) applySlash(raw string, r slashResult) (Model, tea.Cmd) {
 	if r.quit {
 		return m.quit()
 	}
@@ -104,6 +104,7 @@ func (m Model) applySlash(r slashResult) (Model, tea.Cmd) {
 			m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: err.Error()})
 		} else {
 			m.status.Model = r.setModel
+			m.errMsg = ""
 			m.lines = append(m.lines, ChatLine{Kind: LineSystem, Text: "model 已设为 " + r.setModel})
 		}
 		return m, nil
@@ -124,8 +125,6 @@ func (m Model) applySlash(r slashResult) (Model, tea.Cmd) {
 		return m, m.openSkillsPage()
 	}
 	if r.runSkill != "" {
-		label := fmt.Sprintf("[%s] %s", r.runSkill, r.skillQuery)
-		m.lines = append(m.lines, ChatLine{Kind: LineUser, Text: label})
 		return m, m.startSkillRun(r.runSkill, r.skillQuery)
 	}
 	if r.compact {
@@ -133,7 +132,8 @@ func (m Model) applySlash(r slashResult) (Model, tea.Cmd) {
 	}
 	if r.clearContext {
 		newID := m.agent.ClearContext()
-		m.lines = nil
+		userLine := ChatLine{Kind: LineUser, Text: raw}
+		m.lines = []ChatLine{userLine}
 		m.streaming = ""
 		m.syncStatus()
 		m.status.SessionID = shortID(newID)
@@ -154,7 +154,6 @@ func (m Model) applySlash(r slashResult) (Model, tea.Cmd) {
 		return m, m.runInit(r.initWrite)
 	}
 	if r.runPlan != "" {
-		m.lines = append(m.lines, ChatLine{Kind: LineUser, Text: r.runPlan})
 		return m, m.startPlanRun(r.runPlan)
 	}
 	if r.runAgent == "__diff__" {

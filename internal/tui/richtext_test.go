@@ -8,6 +8,13 @@ import (
 	"github.com/tencent-docs/golem/internal/tui/style"
 )
 
+func TestRenderUserTextSlashHighlight(t *testing.T) {
+	out := renderUserText("/permissions plan")
+	if !strings.Contains(stripVisible(out), "/permissions plan") {
+		t.Fatalf("missing user text: %s", out)
+	}
+}
+
 func TestRenderRichTextInlineCode(t *testing.T) {
 	out := renderRichText("use `main.go` here", style.AsstText)
 	if !strings.Contains(out, "main.go") {
@@ -56,7 +63,10 @@ func TestRenderRichTextPreservesColumnWidth(t *testing.T) {
 func TestHelpTextAlignment(t *testing.T) {
 	m := testModel(t)
 	m.activePage = PageChat
-	m.lines = []ChatLine{{Kind: LineSystem, Text: helpText}}
+	m.lines = []ChatLine{
+		{Kind: LineUser, Text: "/help"},
+		{Kind: LineSystem, Text: helpText},
+	}
 	out := renderChatArea(m, 120)
 	plain := style.SysText.Render(helpText)
 	if lipgloss.Width(out) < lipgloss.Width(plain) {

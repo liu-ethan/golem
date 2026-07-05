@@ -28,6 +28,8 @@ type MockLLM struct {
 
 	StreamCalls   []llm.ChatRequest
 	CompleteCalls []llm.CompleteRequest
+
+	ModelName string
 }
 
 // NewMockLLM 创建空的 MockLLM。
@@ -94,6 +96,20 @@ func (m *MockLLM) Reset() {
 	m.CompleteIndex = 0
 	m.StreamCalls = nil
 	m.CompleteCalls = nil
+}
+
+// SetModel 运行时切换模型名，供 Agent.SetModel 测试使用。
+func (m *MockLLM) SetModel(model string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ModelName = model
+}
+
+// Model 返回当前模型名。
+func (m *MockLLM) Model() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.ModelName
 }
 
 var errNoMockResponse = &mockError{"no mock stream response configured"}

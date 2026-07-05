@@ -125,6 +125,44 @@ func TestChatWithMessagesHidesHomeDashboard(t *testing.T) {
 	}
 }
 
+func TestConfirmFlowApprove(t *testing.T) {
+	resp := make(chan bool, 1)
+	m := testModel(t)
+	m.activePage = PageChat
+	m.width = 80
+
+	next, _ := m.Update(confirmRequestMsg{
+		toolName: "bash",
+		input:    map[string]any{"command": "echo ok"},
+		resp:     resp,
+	})
+	m2 := next.(Model)
+	if m2.confirm == nil {
+		t.Fatal("expected confirm state")
+	}
+	out := renderView(m2)
+	if !strings.Contains(out, "是否允许") {
+		t.Fatalf("expected confirm prompt: %s", out)
+	}
+	if !strings.Contains(out, "[Y/Enter] 允许") {
+		t.Fatal("expected confirm footer hints")
+	}
+
+	next, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m3 := next.(Model)
+	if m3.confirm != nil {
+		t.Fatal("confirm should be cleared after approve")
+	}
+	select {
+	case ok := <-resp:
+		if !ok {
+			t.Fatal("expected confirm approved")
+		}
+	default:
+		t.Fatal("expected confirm response")
+	}
+}
+
 func TestNewModelStartsOnWelcome(t *testing.T) {
 	m := testModel(t)
 	if m.activePage != PageWelcome {
@@ -159,3 +197,35 @@ func TestSubmitInputResolvesPartialSlash(t *testing.T) {
 		t.Fatalf("line = %+v", last)
 	}
 }
+
+func TestHandleAgentDoneClearsErrMsgOnSuccess(t *testing.T) {
+	m := testModel(t)
+	m.errMsg = "llm api 400: bad model"
+	m.handleAgentDone(agentDoneMsg{})
+	if m.errMsg != "" {
+		t.Fatalf("errMsg = %q, want cleared after success", m.errMsg)
+	}
+}
+
+func TestHandleAgentDoneSetsErrMsgOnFailure(t *testing.T) {
+	m := testModel(t)
+	m.handleAgentDone(agentDoneMsg{err: errTestAPI})
+	if m.errMsg == "" {
+		t.Fatal("expected errMsg on failure")
+	}
+}
+
+func TestApplySlashSetModelClearsErrMsg(t *testing.T) {
+	m := testModel(t)
+	m.errMsg = "llm api 400: bad model"
+	m2, _ := m.applySlash("/model deepseek-v4-pro", dispatchSlash("/model deepseek-v4-pro", nil))
+	if m2.errMsg != "" {
+		t.Fatalf("errMsg = %q, want cleared after model change", m2.errMsg)
+	}
+}
+
+var errTestAPI = &testAPIError{msg: "llm api 400: bad model"}
+
+type testAPIError struct{ msg string }
+
+func (e *testAPIError) Error() string { return e.msg }

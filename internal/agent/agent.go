@@ -190,7 +190,7 @@ func (a *Agent) handleUserMessage(ctx context.Context, text string, handler Even
 	return a.runAgentLoop(ctx, handler)
 }
 
-// OnSessionEnd 在 /exit、Ctrl+D、SIGINT 等正常退出时调用；P0 委托 SessionEndHandler stub。
+// OnSessionEnd 在 /exit、Ctrl+D 等正常退出时调用；TUI 路径在 alt screen 关闭后由 run.finalizeSession 触发。
 func (a *Agent) OnSessionEnd() {
 	a.onSession.OnSessionEnd(a.sessionID, a.hadUserMessages)
 }

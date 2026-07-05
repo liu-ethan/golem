@@ -190,8 +190,8 @@ func (a *Agent) dispatchTool(ctx context.Context, name string, input map[string]
 	}
 	if a.gate.ShouldConfirm(name, input) {
 		if a.confirm == nil {
-			a.recordDenial(name, input, "user denied")
-			return "Error: user denied tool execution", true, nil
+			a.recordDenial(name, input, "no confirm handler")
+			return "Error: tool confirmation unavailable (no TUI confirm handler)", true, nil
 		}
 		ok, confirmErr := a.confirm(name, input)
 		if confirmErr != nil {

@@ -107,6 +107,42 @@ func TestModelConfirmRejectEsc(t *testing.T) {
 	}
 }
 
+func TestSubmitInputShowsUserLineForSlash(t *testing.T) {
+	m := testModel(t)
+	m.activePage = PageChat
+	m.input = "/help"
+
+	m2, _ := m.submitInput()
+	if len(m2.lines) < 2 {
+		t.Fatalf("lines = %+v, want user + system", m2.lines)
+	}
+	if m2.lines[0].Kind != LineUser || m2.lines[0].Text != "/help" {
+		t.Fatalf("first line = %+v", m2.lines[0])
+	}
+	if m2.lines[1].Kind != LineSystem {
+		t.Fatalf("second line = %+v", m2.lines[1])
+	}
+
+	out := renderChatArea(m2, 120)
+	if !strings.Contains(out, "You") {
+		t.Fatal("expected user label")
+	}
+	if !strings.Contains(stripVisible(out), "/help") {
+		t.Fatal("expected /help in chat area")
+	}
+}
+
+func TestSubmitInputShowsUserLineForChat(t *testing.T) {
+	m := testModel(t)
+	m.activePage = PageChat
+	m.input = "hello"
+
+	m2, _ := m.submitInput()
+	if len(m2.lines) != 1 || m2.lines[0].Kind != LineUser || m2.lines[0].Text != "hello" {
+		t.Fatalf("lines = %+v", m2.lines)
+	}
+}
+
 func TestApplySlashSetMode(t *testing.T) {
 	root := testutil.TempProjectRoot(t)
 	mock := testutil.NewMockLLM()
@@ -114,7 +150,7 @@ func TestApplySlashSetMode(t *testing.T) {
 	ag, _ := agent.New(root, mock, agent.Options{Policy: policy})
 
 	m := NewModel(Config{ProjectRoot: root, Agent: ag, Policy: policy})
-	m2, _ := m.applySlash(dispatchSlash("/permissions plan", nil))
+	m2, _ := m.applySlash("/permissions plan", dispatchSlash("/permissions plan", nil))
 	if m2.status.Approval != approval.ModePlan {
 		t.Fatalf("approval = %q", m2.status.Approval)
 	}

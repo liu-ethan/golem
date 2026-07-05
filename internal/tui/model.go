@@ -150,7 +150,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Input:    msg.input,
 			RespCh:   msg.resp,
 		}
-		m.updateLastToolState(msg.toolName, ToolConfirm)
+		m.upsertToolConfirmLine(msg.toolName, msg.input)
 		return m, nil
 
 	case sessionsOpenMsg:
@@ -245,19 +245,13 @@ func (m Model) handleConfirmKey(key string) (Model, tea.Cmd) {
 	if m.confirm == nil {
 		return m, nil
 	}
-	if allow, deny := confirmKeyAllowed(key); allow {
-		select {
-		case m.confirm.RespCh <- true:
-		default:
-		}
-		m.confirm = nil
-	} else if deny {
-		select {
-		case m.confirm.RespCh <- false:
-		default:
-		}
-		m.confirm = nil
+	allow, deny := confirmKeyAllowed(key)
+	if !allow && !deny {
+		return m, nil
 	}
+	resp := m.confirm.RespCh
+	m.confirm = nil
+	resp <- allow
 	return m, nil
 }
 
@@ -342,11 +336,13 @@ func (m Model) handleChatKey(msg tea.KeyMsg, key string) (Model, tea.Cmd) {
 	case "up", "k":
 		if slashActive && m.slashSel > 0 {
 			m.slashSel--
+			m.showCursor = true
 			return m, nil
 		}
 	case "down", "j":
 		if slashActive && m.slashSel < len(suggestions)-1 {
 			m.slashSel++
+			m.showCursor = true
 			return m, nil
 		}
 	case "enter":
@@ -399,11 +395,15 @@ func (m Model) submitInput() (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if slash := dispatchSlash(raw, m.skillLoader); slash.handled {
-		return m.applySlash(slash)
+	m.lines = append(m.lines, ChatLine{Kind: LineUser, Text: raw})
+	if m.activePage == PageWelcome {
+		m.activePage = PageChat
 	}
 
-	m.lines = append(m.lines, ChatLine{Kind: LineUser, Text: raw})
+	if slash := dispatchSlash(raw, m.skillLoader); slash.handled {
+		return m.applySlash(raw, slash)
+	}
+
 	m.startAgentRun(raw)
 	return m, nil
 }
@@ -450,7 +450,6 @@ func (m Model) resumeSession(sessionID string) tea.Cmd {
 
 func (m Model) quit() (Model, tea.Cmd) {
 	m.quitting = true
-	m.agent.OnSessionEnd()
 	return m, tea.Quit
 }
 
