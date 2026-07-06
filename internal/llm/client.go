@@ -315,9 +315,16 @@ func (c *AnthropicClient) readAPIError(resp *http.Response) error {
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(body, &apiErr); err == nil && apiErr.Error.Message != "" {
-		return fmt.Errorf("llm api %d: %s", resp.StatusCode, apiErr.Error.Message)
+		return formatAPIError(resp.StatusCode, apiErr.Error.Message)
 	}
-	return fmt.Errorf("llm api %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	return formatAPIError(resp.StatusCode, strings.TrimSpace(string(body)))
+}
+
+func formatAPIError(status int, msg string) error {
+	if status == http.StatusRequestEntityTooLarge {
+		return fmt.Errorf("llm api 413: request too large — context may contain oversized tool results; try /compact or start a new session")
+	}
+	return fmt.Errorf("llm api %d: %s", status, msg)
 }
 
 // streamSSE 逐行解析 SSE，向 events 写入 StreamEvent；返回累计 usage。

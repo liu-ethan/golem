@@ -289,7 +289,7 @@ func (a *Agent) SetSessionID(id string) {
 
 // RestoreState 从持久化还原消息历史；resume 后 memoryInjected 应为 false，由调用方设置。
 func (a *Agent) RestoreState(messages []llm.Message, memoryInjected bool, summary string) {
-	a.messages = messages
+	a.messages = RepairToolUsePairing(messages)
 	a.memoryInjected = memoryInjected
 	if summary != "" && (len(a.messages) == 0 || !memory.IsSummaryMessage(a.messages[0])) {
 		a.messages = append([]llm.Message{memory.SummaryMessage(summary)}, a.messages...)
@@ -303,13 +303,12 @@ func (a *Agent) Compact(ctx context.Context, instructions string) (string, error
 		return "", err
 	}
 	if !result.Compacted {
-		batch := a.memoryCfg.CompactBatchSize
-		if batch <= 0 {
-			batch = 10
+		if len(a.messages) == 0 {
+			return "未压缩：当前没有可压缩的消息", nil
 		}
-		return fmt.Sprintf("未压缩：消息数不足（需 > %d 条非 system 消息）或 LLM 未配置", batch), nil
+		return "未压缩：LLM 未配置", nil
 	}
-	return fmt.Sprintf("已压缩最旧 %d 条消息为摘要", compactBatchSize(a.memoryCfg)), nil
+	return fmt.Sprintf("已压缩 %d 条消息为摘要", result.CompactedCount), nil
 }
 
 // AddTokenUsage 累加 LLM 调用的 token 用量，供 TokenUsageHook 与 Layer 0 压缩后更新。

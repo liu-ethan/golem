@@ -25,6 +25,7 @@ type pendingTool struct {
 
 // runStreamTurn 调用 StreamChat 消费 SSE 事件，组装 assistant 消息并通过 handler 推送文本增量。
 func (a *Agent) runStreamTurn(ctx context.Context, handler EventHandler) (streamResult, error) {
+	a.messages = RepairToolUsePairing(a.messages)
 	req := llm.ChatRequest{
 		System:    a.systemPrompt,
 		Messages:  a.messages,
@@ -78,7 +79,7 @@ func (a *Agent) runStreamTurn(ctx context.Context, handler EventHandler) (stream
 			}
 			if evt.ToolInput != nil {
 				block := finalizeToolUse(cur, evt.ToolInput)
-				toolUses = append(toolUses, block)
+				toolUses = appendUniqueToolUse(toolUses, block)
 				pending = pending[:len(pending)-1]
 				if handler != nil {
 					handler(Event{
@@ -104,7 +105,7 @@ func (a *Agent) runStreamTurn(ctx context.Context, handler EventHandler) (stream
 		if input == nil {
 			input = map[string]any{}
 		}
-		toolUses = append(toolUses, finalizeToolUse(p, input))
+		toolUses = appendUniqueToolUse(toolUses, finalizeToolUse(p, input))
 	}
 
 	if streamErr != nil {
@@ -138,17 +139,31 @@ func buildAssistantMessage(text string, toolUses []llm.ContentBlock) llm.Message
 	return llm.Message{Role: llm.RoleAssistant, Content: content}
 }
 
-// executeToolCalls 依次执行 tool_use 块，将全部 tool_result 合并为单条 user 消息追加到 messages。
-// Anthropic Messages API 要求同一条 assistant 消息中的所有 tool_use 必须在同一条 user 消息中回应。
-func (a *Agent) executeToolCalls(ctx context.Context, toolUses []llm.ContentBlock, handler EventHandler) error {
+// maxToolResultBytes 限制单次 tool_result 写入上下文的大小，避免 LLM 请求体过大。
+const maxToolResultBytes = 64 << 10
+
+func truncateToolOutput(s string) string {
+	if len(s) <= maxToolResultBytes {
+		return s
+	}
+	return s[:maxToolResultBytes] + fmt.Sprintf("\n\n(truncated tool output at %d bytes)", maxToolResultBytes)
+}
+
+// collectToolResults 执行 tool_use 并返回 tool_result 块；dispatch 失败时也生成 error result，保证 API 配对完整。
+func (a *Agent) collectToolResults(ctx context.Context, toolUses []llm.ContentBlock, handler EventHandler) ([]llm.ContentBlock, error) {
 	var results []llm.ContentBlock
+	var firstErr error
 	for _, tu := range toolUses {
 		if tu.Type != "tool_use" {
 			continue
 		}
 		result, isErr, err := a.dispatchTool(ctx, tu.Name, tu.Input)
 		if err != nil {
-			return err
+			if firstErr == nil {
+				firstErr = err
+			}
+			result = toolExecutionError(err)
+			isErr = true
 		}
 		if handler != nil {
 			handler(Event{
@@ -167,13 +182,20 @@ func (a *Agent) executeToolCalls(ctx context.Context, toolUses []llm.ContentBloc
 			IsError:   isErr,
 		})
 	}
+	return results, firstErr
+}
+
+// executeToolCalls 依次执行 tool_use 块，将全部 tool_result 合并为单条 user 消息追加到 messages。
+// Anthropic Messages API 要求同一条 assistant 消息中的所有 tool_use 必须在同一条 user 消息中回应。
+func (a *Agent) executeToolCalls(ctx context.Context, toolUses []llm.ContentBlock, handler EventHandler) error {
+	results, err := a.collectToolResults(ctx, toolUses, handler)
 	if len(results) > 0 {
 		a.messages = append(a.messages, llm.Message{
 			Role:    llm.RoleUser,
 			Content: results,
 		})
 	}
-	return nil
+	return err
 }
 
 // dispatchTool 经审批门控后执行单个工具，返回结果文本与是否为错误结果。
@@ -204,9 +226,9 @@ func (a *Agent) dispatchTool(ctx context.Context, name string, input map[string]
 	}
 	out, execErr := a.tools.Execute(ctx, name, input)
 	if execErr != nil {
-		return execErr.Error(), true, nil
+		return truncateToolOutput(execErr.Error()), true, nil
 	}
-	return out, false, nil
+	return truncateToolOutput(out), false, nil
 }
 
 // recordDenial 调用 DenialRecorder 持久化拒绝记录。
@@ -242,8 +264,11 @@ func (a *Agent) runAgentLoop(ctx context.Context, handler EventHandler) error {
 			}
 			return nil
 		}
-		if err := a.executeToolCalls(ctx, turn.ToolUses, handler); err != nil {
-			return err
+		if execErr := a.executeToolCalls(ctx, turn.ToolUses, handler); execErr != nil {
+			if handler != nil {
+				handler(Event{Type: EventError, Err: execErr})
+			}
+			return execErr
 		}
 	}
 }

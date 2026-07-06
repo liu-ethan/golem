@@ -3,11 +3,10 @@ package agent
 import (
 	"context"
 
-	"github.com/tencent-docs/golem/internal/config"
 	"github.com/tencent-docs/golem/internal/memory"
 )
 
-// runCompact 尝试 Layer 0 滑动窗口压缩；force 为 true 时跳过 token 阈值。
+// runCompact 尝试 Layer 0 滑动窗口压缩；force 为 true 时（/compact）强制压缩。
 func (a *Agent) runCompact(ctx context.Context, force bool, instructions string) (memory.CompactResult, error) {
 	if a.llm == nil {
 		return memory.CompactResult{Messages: a.messages}, nil
@@ -37,13 +36,6 @@ func (a *Agent) runCompact(ctx context.Context, force bool, instructions string)
 		a.AddTokenUsage(result.Usage)
 	}
 	return result, nil
-}
-
-func compactBatchSize(cfg config.MemoryConfig) int {
-	if cfg.CompactBatchSize > 0 {
-		return cfg.CompactBatchSize
-	}
-	return 10
 }
 
 // runCompactBeforeTurn 在主循环每轮 StreamChat 前尝试自动压缩。

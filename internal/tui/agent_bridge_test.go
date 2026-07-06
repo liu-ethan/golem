@@ -68,7 +68,7 @@ func TestRenderThinkingBlockSeparateFromAnswer(t *testing.T) {
 			{Kind: LineAssistant, Text: "final answer"},
 		},
 	}
-	out := renderChatArea(m, 80)
+	out := renderChatArea(m, 80, 20)
 	if !strings.Contains(out, "Thinking") {
 		t.Fatal("expected thinking block")
 	}
@@ -100,7 +100,7 @@ func TestChatEmptyStateShowsHomeDashboard(t *testing.T) {
 	m.activePage = PageChat
 	m.width = 80
 	m.height = 24
-	out := renderChatArea(m, 80)
+	out := renderChatArea(m, 80, 20)
 	if !strings.Contains(out, "Welcome back") {
 		t.Fatalf("empty chat missing dashboard: %s", out)
 	}
@@ -116,7 +116,7 @@ func TestChatWithMessagesHidesHomeDashboard(t *testing.T) {
 	m := testModel(t)
 	m.activePage = PageChat
 	m.lines = []ChatLine{{Kind: LineUser, Text: "hello"}}
-	out := renderChatArea(m, 80)
+	out := renderChatArea(m, 80, 20)
 	if strings.Contains(out, "Tips for getting started") {
 		t.Fatal("dashboard should not show when messages exist")
 	}

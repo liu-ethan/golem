@@ -5,12 +5,28 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tencent-docs/golem/internal/approval"
 	"github.com/tencent-docs/golem/internal/llm"
 	"github.com/tencent-docs/golem/internal/testutil"
 )
+
+func TestTruncateToolOutput(t *testing.T) {
+	short := truncateToolOutput("ok")
+	if short != "ok" {
+		t.Fatalf("short = %q", short)
+	}
+	long := strings.Repeat("x", maxToolResultBytes+10)
+	out := truncateToolOutput(long)
+	if len(out) <= maxToolResultBytes {
+		t.Fatalf("expected truncated output > %d, got %d", maxToolResultBytes, len(out))
+	}
+	if !strings.Contains(out, "truncated tool output") {
+		t.Fatalf("output = %q", out[:80])
+	}
+}
 
 // multiToolUseEvents 构造一条 assistant 消息中包含多个 tool_use 的 SSE 事件序列。
 func multiToolUseEvents(id1, name1, inputJSON1, id2, name2, inputJSON2 string) []llm.StreamEvent {

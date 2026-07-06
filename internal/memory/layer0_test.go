@@ -37,9 +37,31 @@ func makeMessages(n int) []llm.Message {
 	return msgs
 }
 
-func TestMaybeCompactSkipsBelowThreshold(t *testing.T) {
+func TestMaybeCompactSkipsWhenNeitherTrigger(t *testing.T) {
 	mock := testutil.NewMockLLM()
 	mock.CompleteText = "should not run"
+	store := &stubSummaryStore{}
+	msgs := makeMessages(8)
+
+	result, err := MaybeCompact(
+		context.Background(), "sess-1", msgs, 50, 100,
+		config.MemoryConfig{CompactBatchSize: 10, CompactThreshold: 0.8},
+		mock, store, false, "",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Compacted {
+		t.Fatal("expected no compaction when neither token nor message threshold met")
+	}
+	if len(mock.CompleteCalls) != 0 {
+		t.Fatalf("Complete calls = %d, want 0", len(mock.CompleteCalls))
+	}
+}
+
+func TestMaybeCompactTriggersOnMessageCount(t *testing.T) {
+	mock := testutil.NewMockLLM()
+	mock.CompleteText = "count trigger summary"
 	store := &stubSummaryStore{}
 	msgs := makeMessages(15)
 
@@ -51,16 +73,17 @@ func TestMaybeCompactSkipsBelowThreshold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Compacted {
-		t.Fatal("expected no compaction below threshold")
+	if !result.Compacted {
+		t.Fatal("expected compaction when message count exceeds batch size")
 	}
-	if len(mock.CompleteCalls) != 0 {
-		t.Fatalf("Complete calls = %d, want 0", len(mock.CompleteCalls))
+	if result.CompactedCount != 10 {
+		t.Errorf("CompactedCount = %d, want 10", result.CompactedCount)
 	}
 }
 
-func TestMaybeCompactSkipsWhenTooFewMessages(t *testing.T) {
+func TestMaybeCompactTriggersOnTokenThresholdWithSmallHistory(t *testing.T) {
 	mock := testutil.NewMockLLM()
+	mock.CompleteText = "token trigger summary"
 	store := &stubSummaryStore{}
 	msgs := makeMessages(8)
 
@@ -72,8 +95,14 @@ func TestMaybeCompactSkipsWhenTooFewMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Compacted {
-		t.Fatal("expected skip when message count <= batch size")
+	if !result.Compacted {
+		t.Fatal("expected compaction when token threshold met")
+	}
+	if len(result.Messages) != 1 {
+		t.Fatalf("messages = %d, want 1 summary", len(result.Messages))
+	}
+	if result.CompactedCount != 8 {
+		t.Errorf("CompactedCount = %d, want 8", result.CompactedCount)
 	}
 }
 
@@ -111,7 +140,7 @@ func TestMaybeCompactReplacesOldestBatch(t *testing.T) {
 	}
 }
 
-func TestMaybeCompactForceBypassesThreshold(t *testing.T) {
+func TestMaybeCompactForceReplacesNewestBatch(t *testing.T) {
 	mock := testutil.NewMockLLM()
 	mock.CompleteText = "forced summary"
 	store := &stubSummaryStore{}
@@ -128,8 +157,42 @@ func TestMaybeCompactForceBypassesThreshold(t *testing.T) {
 	if !result.Compacted {
 		t.Fatal("expected forced compaction")
 	}
+	if len(result.Messages) != 3 {
+		t.Fatalf("messages = %d, want 3 (2 kept + 1 summary)", len(result.Messages))
+	}
+	if !IsSummaryMessage(result.Messages[2]) {
+		t.Fatal("summary should be appended after kept prefix")
+	}
 	if !strings.Contains(mock.CompleteCalls[0].System, "保留文件路径") {
 		t.Errorf("system prompt = %q", mock.CompleteCalls[0].System)
+	}
+	if len(mock.CompleteCalls[0].Messages) != 10 {
+		t.Errorf("Complete batch size = %d, want 10", len(mock.CompleteCalls[0].Messages))
+	}
+}
+
+func TestMaybeCompactForceCompressesAllWhenWithinBatchSize(t *testing.T) {
+	mock := testutil.NewMockLLM()
+	mock.CompleteText = "all summary"
+	store := &stubSummaryStore{}
+	msgs := makeMessages(5)
+
+	result, err := MaybeCompact(
+		context.Background(), "sess-1", msgs, 1, 100,
+		config.MemoryConfig{CompactBatchSize: 10, CompactThreshold: 0.8},
+		mock, store, true, "",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Compacted {
+		t.Fatal("expected forced compaction")
+	}
+	if len(result.Messages) != 1 {
+		t.Fatalf("messages = %d, want 1", len(result.Messages))
+	}
+	if result.CompactedCount != 5 {
+		t.Errorf("CompactedCount = %d, want 5", result.CompactedCount)
 	}
 }
 

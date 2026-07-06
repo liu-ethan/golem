@@ -10,7 +10,7 @@ import (
 	"github.com/tencent-docs/golem/internal/skills"
 )
 
-// renderView 渲染完整 TUI 视图。
+// renderView 渲染完整 TUI 视图；顶栏与底栏固定，中间区域可滚动。
 func renderView(m Model) string {
 	width := m.width
 	if width < 40 {
@@ -24,51 +24,35 @@ func renderView(m Model) string {
 		return renderSetupPanel(m, width, m.height)
 	}
 
-	var body strings.Builder
-	body.WriteString(renderStatusBar(m.status))
-	body.WriteString("\n")
-	body.WriteString(renderSeparator(width))
-	body.WriteString("\n")
+	header, footer, midH := layoutSections(m, width)
+	middleContent := renderMiddleContent(m, width, midH)
+	totalLines := lipgloss.Height(middleContent)
+	start := m.viewportStart(totalLines, midH)
+	middle := clipToViewport(middleContent, midH, start)
 
+	var body strings.Builder
+	body.WriteString(header)
+	body.WriteString("\n")
+	body.WriteString(middle)
+	body.WriteString("\n")
+	body.WriteString(footer)
+	return body.String()
+}
+
+// renderMiddleContent 渲染中间区域完整内容（未裁剪）。
+func renderMiddleContent(m Model, width, areaHeight int) string {
 	switch m.activePage {
 	case PagePermissions:
-		body.WriteString(renderPermissionsPage(m, width))
+		return renderPermissionsPage(m, width)
 	case PageSessions:
-		body.WriteString(pages.Sessions(width, sessionPageEntries(m.sessions.Entries), m.sessions.Cursor, m.agent.SessionID()))
+		return pages.Sessions(width, sessionPageEntries(m.sessions.Entries), m.sessions.Cursor, m.agent.SessionID())
 	case PageMemories:
-		body.WriteString(pages.Memories(width, pages.MemoryFactsToView(m.memories.Facts), m.memories.InjectEnabled, m.memories.Cursor))
+		return pages.Memories(width, pages.MemoryFactsToView(m.memories.Facts), m.memories.InjectEnabled, m.memories.Cursor)
 	case PageSkills:
-		body.WriteString(pages.Skills(width, skillPageEntries(m.skillsPage.Skills), m.skillsPage.Cursor, skills.ScanPaths(m.projectRoot)))
+		return pages.Skills(width, skillPageEntries(m.skillsPage.Skills), m.skillsPage.Cursor, skills.ScanPaths(m.projectRoot))
 	default:
-		body.WriteString(renderChatArea(m, width))
+		return renderChatArea(m, width, areaHeight)
 	}
-
-	if m.confirm != nil {
-		body.WriteString("\n")
-		body.WriteString(renderConfirmBox(m.confirm, width, m.projectRoot))
-	}
-
-	body.WriteString("\n")
-	body.WriteString(renderSeparator(width))
-	body.WriteString("\n")
-
-	suggestions := matchSlashSuggestions(m.input, m.skillLoader)
-	if len(suggestions) > 0 && m.activePage == PageChat && !m.running {
-		body.WriteString(renderSlashSuggestions(suggestions, m.slashSel, width))
-		body.WriteString("\n")
-	}
-
-	body.WriteString(renderInputLine(m.input, m.running, m.showCursor))
-
-	if m.errMsg != "" && m.activePage == PageChat {
-		body.WriteString("\n")
-		body.WriteString(style.ErrText.Render(m.errMsg))
-	}
-
-	body.WriteString("\n")
-	body.WriteString(renderFooter(m, len(suggestions) > 0))
-
-	return body.String()
 }
 
 // renderInputLine 渲染输入区：提示符、用户输入文本与光标。
@@ -142,23 +126,13 @@ func renderSeparator(width int) string {
 	return style.Border.Render(strings.Repeat("─", width))
 }
 
-func renderChatArea(m Model, width int) string {
+func renderChatArea(m Model, width, areaHeight int) string {
 	if chatIsEmpty(m) {
-		return renderChatHome(m, width)
+		return renderChatHome(m, width, areaHeight)
 	}
 
 	var b strings.Builder
-	visible := m.lines
-	start := 0
-	maxLines := m.height - 12
-	if maxLines < 5 {
-		maxLines = 5
-	}
-	if len(visible) > maxLines {
-		start = len(visible) - maxLines
-	}
-
-	for _, line := range visible[start:] {
+	for _, line := range m.lines {
 		switch line.Kind {
 		case LineUser:
 			b.WriteString(style.UserLabel.Render("  You "))
@@ -196,8 +170,7 @@ func renderChatArea(m Model, width int) string {
 }
 
 // renderChatHome 在聊天空态渲染 Claude Code 风格主页 dashboard。
-func renderChatHome(m Model, width int) string {
-	areaHeight := m.height - 12
+func renderChatHome(m Model, width, areaHeight int) string {
 	if areaHeight < 8 {
 		areaHeight = 8
 	}

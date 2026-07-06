@@ -54,6 +54,9 @@ type Model struct {
 	quitting   bool
 	showCursor bool
 
+	chatScrollTop    int
+	chatPinnedBottom bool
+
 	needsSetup          bool
 	setupStep           int
 	setupDefaultBaseURL string
@@ -118,6 +121,7 @@ func NewModel(cfg Config) Model {
 		width:               80,
 		height:              24,
 		showCursor:          true,
+		chatPinnedBottom:    true,
 		needsSetup:          cfg.NeedsSetup,
 		setupDefaultBaseURL: cfg.DefaultBaseURL,
 		setupDefaultModel:   cfg.DefaultModel,
@@ -206,6 +210,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lines = rebuildChatFromMessages(m.agent.Messages())
 		m.streaming = ""
 		m.syncStatus()
+		m.pinChatBottom()
 		m.lines = append(m.lines, ChatLine{
 			Kind: LineSystem,
 			Text: fmt.Sprintf("已恢复会话 %s", shortID(msg.sessionID)),
@@ -368,10 +373,36 @@ func (m Model) handleChatKey(msg tea.KeyMsg, key string) (Model, tea.Cmd) {
 		m.lines = nil
 		m.streaming = ""
 		m.thinkingStreaming = ""
+		m.pinChatBottom()
 		return m, nil
 	}
 	if key == "ctrl+g" {
 		return m, m.openExternalEditor()
+	}
+
+	if m.canScrollChat() {
+		_, _, midH := layoutSections(m, m.width)
+		switch key {
+		case "up", "k":
+			m.scrollChatUp(1)
+			return m, nil
+		case "down", "j":
+			m.scrollChatDown(1, m.width)
+			return m, nil
+		case "pgup":
+			m.scrollChatUp(midH)
+			return m, nil
+		case "pgdown":
+			m.scrollChatDown(midH, m.width)
+			return m, nil
+		case "home":
+			m.chatPinnedBottom = false
+			m.chatScrollTop = 0
+			return m, nil
+		case "end":
+			m.pinChatBottom()
+			return m, nil
+		}
 	}
 
 	switch key {
@@ -438,6 +469,7 @@ func (m Model) submitInput() (Model, tea.Cmd) {
 	}
 
 	m.lines = append(m.lines, ChatLine{Kind: LineUser, Text: raw})
+	m.pinChatBottom()
 	if m.activePage == PageWelcome {
 		m.activePage = PageChat
 	}

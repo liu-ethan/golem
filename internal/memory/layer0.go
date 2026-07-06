@@ -20,13 +20,16 @@ type SummaryStore interface {
 
 // CompactResult 描述一次压缩尝试的结果。
 type CompactResult struct {
-	Messages  []llm.Message
-	Summary   string
-	Compacted bool
-	Usage     llm.Usage
+	Messages       []llm.Message
+	Summary        string
+	Compacted      bool
+	CompactedCount int
+	Usage          llm.Usage
 }
 
-// MaybeCompact 在累计 input tokens 达阈值时压缩最旧一批非 system 消息；force 为 true 时跳过阈值（/compact）。
+// MaybeCompact 在 force 为 false 时，累计 input tokens 达阈值或非 system 消息数大于 batch size（满足其一）即触发压缩；
+// force 为 true 时（/compact）强制压缩：消息数大于 batch size 时压最新 batch size 条，否则压全部。
+// 自动压缩在消息数大于 batch size 时压最旧 batch size 条；仅因 token 达阈值且消息数不足一批时压全部。
 func MaybeCompact(
 	ctx context.Context,
 	sessionID string,
@@ -54,17 +57,41 @@ func MaybeCompact(
 		threshold = 0.8
 	}
 
-	if !force && float64(sessionInputTokens) < float64(contextLimit)*threshold {
-		return out, nil
-	}
-
 	nonSystem := filterNonSystem(messages)
-	if len(nonSystem) <= batchSize {
+	if len(nonSystem) == 0 {
 		return out, nil
 	}
 
-	old := append([]llm.Message(nil), nonSystem[:batchSize]...)
-	summary, usage, err := summarizeBatch(ctx, client, old, extraInstructions)
+	tokenThresholdMet := float64(sessionInputTokens) >= float64(contextLimit)*threshold
+	messageCountMet := len(nonSystem) > batchSize
+
+	if !force && !tokenThresholdMet && !messageCountMet {
+		return out, nil
+	}
+
+	var batch []llm.Message
+	var applySummary func(string) []llm.Message
+
+	switch {
+	case force && len(nonSystem) > batchSize:
+		batch = append([]llm.Message(nil), nonSystem[len(nonSystem)-batchSize:]...)
+		applySummary = func(summary string) []llm.Message {
+			return replaceNewestBatch(messages, batchSize, summary)
+		}
+	case force:
+		batch = append([]llm.Message(nil), nonSystem...)
+		applySummary = replaceAllWithSummary
+	case len(nonSystem) > batchSize:
+		batch = append([]llm.Message(nil), nonSystem[:batchSize]...)
+		applySummary = func(summary string) []llm.Message {
+			return replaceOldestBatch(messages, batchSize, summary)
+		}
+	default:
+		batch = append([]llm.Message(nil), nonSystem...)
+		applySummary = replaceAllWithSummary
+	}
+
+	summary, usage, err := summarizeBatch(ctx, client, batch, extraInstructions)
 	if err != nil {
 		return out, err
 	}
@@ -73,7 +100,8 @@ func MaybeCompact(
 		return out, fmt.Errorf("layer0: empty summary from LLM")
 	}
 
-	newMessages := replaceOldestBatch(messages, batchSize, summary)
+	newMessages := applySummary(summary)
+
 	if store != nil && sessionID != "" {
 		if err := store.UpdateSummary(sessionID, summary); err != nil {
 			return out, fmt.Errorf("update session summary: %w", err)
@@ -83,6 +111,7 @@ func MaybeCompact(
 	out.Messages = newMessages
 	out.Summary = summary
 	out.Compacted = true
+	out.CompactedCount = len(batch)
 	out.Usage = usage
 	return out, nil
 }
@@ -99,13 +128,33 @@ func filterNonSystem(messages []llm.Message) []llm.Message {
 	return out
 }
 
-// replaceOldestBatch 将最旧 batchSize 条消息替换为一条 summary 用户消息。
+// replaceOldestBatch 将最旧 batchSize 条消息替换为一条 summary 用户消息置于开头。
 func replaceOldestBatch(messages []llm.Message, batchSize int, summary string) []llm.Message {
 	if batchSize <= 0 || batchSize >= len(messages) {
-		return messages
+		if summary == "" {
+			return messages
+		}
+		return replaceAllWithSummary(summary)
 	}
 	remaining := append([]llm.Message(nil), messages[batchSize:]...)
 	return append([]llm.Message{SummaryMessage(summary)}, remaining...)
+}
+
+// replaceNewestBatch 将最新 batchSize 条消息替换为一条 summary 用户消息置于末尾。
+func replaceNewestBatch(messages []llm.Message, batchSize int, summary string) []llm.Message {
+	if batchSize <= 0 || len(messages) <= batchSize {
+		if summary == "" {
+			return messages
+		}
+		return replaceAllWithSummary(summary)
+	}
+	prefix := append([]llm.Message(nil), messages[:len(messages)-batchSize]...)
+	return append(prefix, SummaryMessage(summary))
+}
+
+// replaceAllWithSummary 将全部消息替换为一条 summary 用户消息。
+func replaceAllWithSummary(summary string) []llm.Message {
+	return []llm.Message{SummaryMessage(summary)}
 }
 
 // SummaryMessage 构造 Layer 0 摘要用户消息。

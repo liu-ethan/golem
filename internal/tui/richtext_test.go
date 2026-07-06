@@ -112,7 +112,7 @@ func TestHelpTextAlignment(t *testing.T) {
 		{Kind: LineUser, Text: "/help"},
 		{Kind: LineSystem, Text: helpText},
 	}
-	out := renderChatArea(m, 120)
+	out := renderChatArea(m, 120, 20)
 	plain := style.SysText.Render(helpText)
 	if lipgloss.Width(out) < lipgloss.Width(plain) {
 		t.Fatal("help output narrower than plain text")

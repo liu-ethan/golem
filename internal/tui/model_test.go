@@ -151,7 +151,7 @@ func TestSubmitInputShowsUserLineForSlash(t *testing.T) {
 		t.Fatalf("second line = %+v", m2.lines[1])
 	}
 
-	out := renderChatArea(m2, 120)
+	out := renderChatArea(m2, 120, 20)
 	if !strings.Contains(out, "You") {
 		t.Fatal("expected user label")
 	}

@@ -12,4 +12,4 @@ memory:
   layer2_session_threshold: 3
   bm25_top_k: 5
   compact_batch_size: 10                          # Layer 0 每次压缩消息条数
-  compact_threshold: 0.8                          # 会话累计 input tokens 达 context_limit × 0.8 触发
+  compact_threshold: 0.8                          # input tokens 达 context_limit × 0.8 或消息数 > batch_size 时触发（满足其一）

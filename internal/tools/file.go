@@ -1,17 +1,25 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
+const (
+	readFileMaxReturnBytes = 100 << 10 // 单次最多返回 100KB 文本
+	readFileMaxFileBytes   = 10 << 20  // 超过 10MB 的文件拒绝读取
+	readFileProbeBytes     = 8192      // 二进制检测采样大小
+)
+
 func readFileTool(projectRoot string) Tool {
 	return Tool{
 		Name:        "read_file",
-		Description: "Read the contents of a file. Path must be inside project_root.",
+		Description: "Read the contents of a text file (returns up to 100KB). Binary files and files over 10MB are rejected. Path must be inside project_root.",
 		InputSchema: objectSchema(map[string]any{
 			"path": stringProperty("Relative path to the file inside project_root"),
 		}, "path"),
@@ -74,17 +82,62 @@ func editFileTool(projectRoot string) Tool {
 	}
 }
 
-// readFile 读取 projectRoot 内相对路径文件的全部内容。
+// readFile 读取 projectRoot 内相对路径的文本文件，拒绝二进制与过大文件。
 func readFile(projectRoot, path string) (string, error) {
 	abs, err := ValidatePath(projectRoot, path)
 	if err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(abs)
+	info, err := os.Stat(abs)
 	if err != nil {
 		return "", err
 	}
-	return string(data), nil
+	if info.IsDir() {
+		return "", fmt.Errorf("%s is a directory; use list_dir instead", path)
+	}
+	if info.Size() > readFileMaxFileBytes {
+		return "", fmt.Errorf("file too large (%d bytes); read_file supports files up to %d bytes", info.Size(), readFileMaxFileBytes)
+	}
+
+	f, err := os.Open(abs)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	probe := make([]byte, readFileProbeBytes)
+	n, err := io.ReadFull(f, probe)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		return "", err
+	}
+	if isBinaryContent(probe[:n]) {
+		return "", fmt.Errorf("binary file (%d bytes); read_file only supports text files", info.Size())
+	}
+
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	data, err := io.ReadAll(io.LimitReader(f, readFileMaxReturnBytes+1))
+	if err != nil {
+		return "", err
+	}
+
+	truncated := info.Size() > int64(len(data)) || len(data) > readFileMaxReturnBytes
+	if len(data) > readFileMaxReturnBytes {
+		data = data[:readFileMaxReturnBytes]
+	}
+	out := string(data)
+	if truncated {
+		out += fmt.Sprintf("\n\n(truncated: showing first %d of %d bytes)", len(data), info.Size())
+	}
+	return out, nil
+}
+
+func isBinaryContent(sample []byte) bool {
+	if len(sample) == 0 {
+		return false
+	}
+	return bytes.IndexByte(sample, 0) >= 0
 }
 
 // writeFileInProject 写入 projectRoot 内相对路径文件，必要时创建父目录。

@@ -2,6 +2,9 @@ package tools
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -111,5 +114,50 @@ func TestEditFileMissingOldString(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("edit_file expected error for missing old_string")
+	}
+}
+
+func TestReadFileRejectsBinary(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "bin")
+	if err := os.WriteFile(path, []byte{0x7f, 'E', 'L', 'F', 0x00, 0x01}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reg := NewRegistry(root, "")
+	_, err := reg.Execute(context.Background(), "read_file", map[string]any{"path": "bin"})
+	if err == nil {
+		t.Fatal("expected error for binary file")
+	}
+	if !strings.Contains(err.Error(), "binary file") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestReadFileTruncatesLargeText(t *testing.T) {
+	root := t.TempDir()
+	content := strings.Repeat("a", readFileMaxReturnBytes+100)
+	path := filepath.Join(root, "big.txt")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reg := NewRegistry(root, "")
+	got, err := reg.Execute(context.Background(), "read_file", map[string]any{"path": "big.txt"})
+	if err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+	if !strings.Contains(got, "(truncated:") {
+		t.Fatalf("expected truncation notice, got len=%d", len(got))
+	}
+	if len(got) > readFileMaxReturnBytes+128 {
+		t.Fatalf("output too large: %d bytes", len(got))
+	}
+}
+
+func TestReadFileRejectsDirectory(t *testing.T) {
+	root := t.TempDir()
+	reg := NewRegistry(root, "")
+	_, err := reg.Execute(context.Background(), "read_file", map[string]any{"path": "."})
+	if err == nil {
+		t.Fatal("expected error for directory")
 	}
 }

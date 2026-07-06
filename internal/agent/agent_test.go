@@ -489,7 +489,7 @@ func makeAgentMessages(n int) []llm.Message {
 	return msgs
 }
 
-// TestAgentCompactManual 验证 /compact 路径压缩最旧一批消息并写入 summary store。
+// TestAgentCompactManual 验证 /compact 路径强制压缩最新一批消息并写入 summary store。
 func TestAgentCompactManual(t *testing.T) {
 	root := testutil.TempProjectRoot(t)
 	st, err := session.Open(root)
@@ -527,8 +527,8 @@ func TestAgentCompactManual(t *testing.T) {
 	if len(ag.Messages()) != 6 {
 		t.Fatalf("messages = %d, want 6", len(ag.Messages()))
 	}
-	if !memory.IsSummaryMessage(ag.Messages()[0]) {
-		t.Error("expected summary message at front")
+	if !memory.IsSummaryMessage(ag.Messages()[5]) {
+		t.Error("expected summary message at end after keeping oldest prefix")
 	}
 	summary, _, err := st.LoadSession(sessionID)
 	if err != nil {
