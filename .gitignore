@@ -23,4 +23,7 @@ coverage.out
 Thumbs.db
 
 # 测试文件夹
-test/
+test_agent/
+test_benchmark/
+
+Claude-Code/
